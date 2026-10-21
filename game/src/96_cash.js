@@ -224,7 +224,14 @@ const CASH = (() => {
   setInterval(() => { if (game.screen === 'cashLobby' && C.lobby && C.lobby.state === 'open') { const el = document.getElementById('cashStatus'); if (el) el.innerHTML = statusHtml(C.lobby); } }, 1000);
 
   // ── actions
-  const errText = (e) => { const m = (e && (e.shortMessage || e.message)) || String(e); return /reject|denied|cancel/i.test(m) ? 'Cancelled in your wallet.' : m.replace(/^Error:\s*/, '').slice(0, 180); };
+  // walk the error's cause chain: viem wraps the wallet's real reason ("An unknown RPC error occurred" alone says nothing)
+  const errText = (e) => {
+    console.error('[hotshots wallet]', e);
+    const parts = []; let x = e;
+    for (let i = 0; x && i < 5; i++, x = x.cause) { const m = String(x.details || x.shortMessage || x.message || x).replace(/^Error:\s*/, ''); if (m && !parts.includes(m)) parts.push(m + (x.code != null ? ` (${x.code})` : '')); }
+    const m = parts.join(' · ') || String(e);
+    return /reject|denied|cancel/i.test(m) ? 'Cancelled in your wallet.' : m.slice(0, 300);
+  };
   async function verifyAndQueue() {
     C.err = ''; C.busy = 'Connecting…'; rerender();
     try {
