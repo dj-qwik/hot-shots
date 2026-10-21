@@ -1,0 +1,17 @@
+{
+  "name": "@hotshots/settlement",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.ts",
+    "cosigner": "node src/cosignerMain.ts",
+    "test": "node --test 'test/*.test.ts'",
+    "db:migrate": "psql \"$DATABASE_URL\" -f db/schema.sql"
+  },
+  "dependencies": {
+    "@hotshots/shared": "*",
+    "pg": "^8.13.0",
+    "viem": "^2.57.7"
+  }
+}

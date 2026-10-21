@@ -1,0 +1,45 @@
+/* Spec §10 palette. Meaning is never carried by colour alone (icons/text accompany every state). */
+:root {
+  --coral: #ff557d;
+  --cyan: #37d8e9;
+  --butter: #ffd95b;
+  --violet: #8065f5;
+  --mint: #7ee2b8;
+  --navy: #25305d;
+  --bg: #161c38;
+  --panel: #1f2750;
+  --text: #f4f6ff;
+  --muted: #a9b0d6;
+  --danger: #ff6b6b;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, sans-serif; }
+.shell { max-width: 720px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 16px; }
+h1 { margin: 0; color: var(--coral); letter-spacing: 0.02em; }
+h2 { margin: 0 0 12px; font-size: 1.15rem; }
+.panel { background: var(--panel); border-radius: 16px; padding: 20px; border: 1px solid #2f3a70; }
+.muted { color: var(--muted); }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0 0 12px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; overflow-wrap: anywhere; }
+a { color: var(--cyan); }
+.btn { font: inherit; border-radius: 10px; padding: 10px 16px; border: 1px solid #3c4887; background: var(--navy); color: var(--text); cursor: pointer; margin: 8px 8px 0 0; }
+.btn.primary { background: var(--coral); border-color: var(--coral); color: #1a1030; font-weight: 700; }
+.btn.ghost { background: transparent; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn:focus-visible, input:focus-visible { outline: 3px solid var(--butter); outline-offset: 2px; }
+.banner { border-radius: 10px; padding: 10px 12px; margin: 12px 0; }
+.banner.warn { background: #3a2333; border-left: 4px solid var(--danger); }
+.banner.warn::before { content: "⚠ "; }
+.banner.info { background: #1d3442; border-left: 4px solid var(--cyan); }
+.banner.info::before { content: "ℹ "; }
+.math { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+.math th { text-align: left; font-weight: 500; color: var(--muted); padding: 6px 12px 6px 0; vertical-align: top; }
+.math td { padding: 6px 0; }
+.fineprint { color: var(--muted); font-size: 0.9rem; padding-left: 18px; }
+.ack { display: flex; gap: 10px; align-items: flex-start; margin: 12px 0; }
+.ack input { margin-top: 4px; width: 18px; height: 18px; }
+.txstate { margin-top: 12px; }
+.txstate.included::before { content: "✓ "; color: var(--mint); }
+.txstate.error::before, .txstate.reverted::before { content: "✕ "; color: var(--danger); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
