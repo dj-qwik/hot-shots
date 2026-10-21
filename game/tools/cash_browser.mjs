@@ -59,6 +59,9 @@ if (process.env.TRACE) { const tr = []; for (let i = 0; i < 40; i++) { tr.push(a
 await A.waitForSelector('#cashDeposit', { timeout: 60000 }); await A.screenshot({ path: path.join(OUT, 'c3_lobby.png') })
 await A.click('#cashDeposit'); await A.waitForFunction(() => CASH.state.lobby && CASH.state.lobby.youDeposited, null, { timeout: 60000 }); await A.waitForTimeout(3500)
 await A.screenshot({ path: path.join(OUT, 'c4_deposited.png') })
+const redraws = await A.evaluate(() => new Promise((res) => { let n = 0; const mo = new MutationObserver((ms) => { for (const m of ms) if (m.target.id === 'ov') n++ }); mo.observe(document.getElementById('ov'), { childList: true }); setTimeout(() => { mo.disconnect(); res(n) }, 5000) }))
+console.log(`lobby card full redraws while waiting 5 s: ${redraws} (0 = no flicker)`)
+if (redraws > 0) done(false, 'lobby card keeps redrawing (flicker)')
 await B.waitForSelector('#cashDeposit', { timeout: 60000 }); await B.click('#cashDeposit')
 await A.waitForFunction(() => game.phase === 'intro', null, { timeout: 90000 }); await A.screenshot({ path: path.join(OUT, 'c5_intro.png') })
 const t0 = Date.now(); let shot = false

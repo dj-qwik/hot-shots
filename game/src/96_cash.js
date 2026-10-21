@@ -39,7 +39,13 @@ const CASH = (() => {
   setInterval(() => { if (C.w && C.w.address) refresh(); }, 12000);
   // redraw only when something visible changed (a redraw mid-click would swallow the click)
   let lastHtml = '';
-  const paint = (html) => { if (html !== lastHtml || $('#ov').hidden) { lastHtml = html; showOverlay(html); } };
+  const STATUS_RE = /<p id="cashStatus">[\s\S]*?<\/p>/;
+  const paint = (html) => {
+    const key = html.replace(STATUS_RE, ''); // the ticking countdown alone never warrants a redraw
+    if (key !== lastHtml || $('#ov').hidden) { lastHtml = key; showOverlay(html); return; }
+    const el = document.getElementById('cashStatus'), m = html.match(STATUS_RE);
+    if (el && m) el.outerHTML = m[0];
+  };
   const rerender = () => { if (game.screen === 'cashSetup') paint(setupCard()); else if (game.screen === 'cashLobby') paint(lobbyCard()); };
 
   // ── wallet pill in the top bar
@@ -110,17 +116,21 @@ const CASH = (() => {
       </div>
     </div>`;
   }
-  function lobbyCard() {
-    const L = C.lobby; if (!L) return '';
+  function statusHtml(L) {
     const left = Math.max(0, Math.ceil((L.deadlineMs - (performance.now() - L.at)) / 1000));
     const mm = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+    const status = L.state === 'opening' ? 'Opening the lobby on Robinhood Chain…' : L.state === 'locking' ? 'Locking the roster on chain…' : L.state === 'cancelled' ? 'The lobby did not fill. Every deposit is being refunded automatically.' : L.state === 'failed' ? `Could not open the lobby: ${esc(L.error || 'unknown error')}` : L.youDeposited ? `You're in. Waiting for ${L.size - L.seats.length} more · lobby closes in ${mm}` : `Deposit to take a seat · ${L.seats.length} / ${L.size} in · closes in ${mm}`;
+    const txLink = C.tx && W() && W().explorerTx(C.tx) ? ` <a href="${W().explorerTx(C.tx)}" target="_blank" rel="noopener">view tx ↗</a>` : '';
+    return status + txLink;
+  }
+  function lobbyCard() {
+    const L = C.lobby; if (!L) return '';
     const seats = Array.from({ length: L.size }, (_, i) => {
       const s = L.seats[i];
       return s ? `<div class="seat on${s.you ? ' you' : ''}"><img src="${portrait(i)}" alt=""><span class="nm">${s.you ? 'You' : esc(short(s.wallet))}</span><span class="label" style="color:var(--mint)">Deposited</span></div>`
         : `<div class="seat"><div class="ghost">?</div><span class="nm" style="color:var(--dim)">Open seat</span></div>`;
     }).join('');
-    const status = L.state === 'opening' ? 'Opening the lobby on Robinhood Chain…' : L.state === 'locking' ? 'Locking the roster on chain…' : L.state === 'cancelled' ? 'The lobby did not fill. Every deposit is being refunded automatically.' : L.state === 'failed' ? `Could not open the lobby: ${esc(L.error || 'unknown error')}` : L.youDeposited ? `You're in. Waiting for ${L.size - L.seats.length} more · lobby closes in ${mm}` : `Deposit to take a seat · ${L.seats.length} / ${L.size} in · closes in ${mm}`;
-    const txLink = C.tx && W() && W().explorerTx(C.tx) ? ` <a href="${W().explorerTx(C.tx)}" target="_blank" rel="noopener">view tx ↗</a>` : '';
+    const status = statusHtml(L), txLink = '';
     return `<div class="card lobby">
       <div class="row" style="justify-content:space-between"><h2>${L.state === 'locking' ? 'Starting…' : 'Real-money lobby'}</h2><span class="label">${L.size} players · ${L.stake} ${unit()} each</span></div>
       <div class="seats">${seats}</div>
@@ -134,7 +144,8 @@ const CASH = (() => {
       <p class="fine">Escrow <code>${esc(short(L.escrow))}</code> · match <code>${esc(L.matchId.slice(0, 10))}…</code></p>
     </div>`;
   }
-  setInterval(() => { if (game.screen === 'cashLobby' && C.lobby && C.lobby.state === 'open' && !C.busy) paint(lobbyCard()); }, 1000);
+  // tick only the countdown text: redrawing the whole card every second replays its pop-in animation (flicker)
+  setInterval(() => { if (game.screen === 'cashLobby' && C.lobby && C.lobby.state === 'open') { const el = document.getElementById('cashStatus'); if (el) el.innerHTML = statusHtml(C.lobby); } }, 1000);
 
   // ── actions
   const errText = (e) => { const m = (e && (e.shortMessage || e.message)) || String(e); return /reject|denied|cancel/i.test(m) ? 'Cancelled in your wallet.' : m.replace(/^Error:\s*/, '').slice(0, 180); };
@@ -156,24 +167,24 @@ const CASH = (() => {
     } catch (e) { C.err = errText(e); C.busy = ''; rerender(); }
   }
   async function deposit() {
-    const L = C.lobby; C.err = ''; C.busy = 'Confirm in your wallet…'; showOverlay(lobbyCard());
+    const L = C.lobby; C.err = ''; C.busy = 'Confirm in your wallet…'; paint(lobbyCard());
     try {
       C.tx = await W().deposit(L.matchId, L.stake);
-      C.busy = 'Depositing…'; showOverlay(lobbyCard());
+      C.busy = 'Depositing…'; paint(lobbyCard());
       const st = await W().waitTx(C.tx);
       if (st !== 'success') throw new Error('The deposit transaction failed.');
       L.youDeposited = true; SFX.score();
     } catch (e) { C.err = errText(e); }
-    C.busy = ''; refresh(); showOverlay(lobbyCard());
+    C.busy = ''; refresh(); paint(lobbyCard());
   }
   async function leave() {
-    const L = C.lobby; C.err = ''; C.busy = 'Confirm in your wallet…'; showOverlay(lobbyCard());
+    const L = C.lobby; C.err = ''; C.busy = 'Confirm in your wallet…'; paint(lobbyCard());
     try {
-      C.tx = await W().leave(L.matchId); C.busy = 'Refunding…'; showOverlay(lobbyCard());
+      C.tx = await W().leave(L.matchId); C.busy = 'Refunding…'; paint(lobbyCard());
       if ((await W().waitTx(C.tx)) !== 'success') throw new Error('The refund transaction failed.');
       NET.send({ t: 'leaveCash' }); C.lobby = null; C.busy = ''; refresh(); game.screen = 'cashSetup'; showOverlay(setupCard()); return;
     } catch (e) { C.err = errText(e); }
-    C.busy = ''; showOverlay(lobbyCard());
+    C.busy = ''; paint(lobbyCard());
   }
   $('#ov').addEventListener('click', (e) => {
     const t = e.target.closest('button'); if (!t) return;
@@ -193,7 +204,7 @@ const CASH = (() => {
   // ── server messages (routed from NET)
   function onLobby(m) {
     C.lobby = { ...m, at: performance.now() }; C.busy = C.busy === 'Finding a lobby…' ? '' : C.busy;
-    if (game.screen === 'cashSetup' || game.screen === 'cashLobby') { game.screen = 'cashLobby'; showOverlay(lobbyCard()); }
+    if (game.screen === 'cashSetup' || game.screen === 'cashLobby') { game.screen = 'cashLobby'; paint(lobbyCard()); }
   }
   function onMatch(m) { C.match = { matchId: C.lobby ? C.lobby.matchId : null, stake: m.stake, size: m.size }; C.settle = null; }
   // ── after the match: show settlement progress on the champion card
