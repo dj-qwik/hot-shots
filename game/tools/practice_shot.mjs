@@ -1,4 +1,4 @@
-// practice-match screenshots of one arena: node tools/_pshot.mjs <arena> <outPrefix> <ms,ms,...>
+// practice-match screenshots of one arena: node tools/practice_shot.mjs <arena> <outPrefix> <ms,ms,...>   (HOLD=KeyW, TOUR=y,y,…, TRACKTOUR=0.2,0.5 for turnpike)
 import { createRequire } from 'node:module'
 import fs from 'node:fs'; import path from 'node:path'
 const { chromium } = createRequire('/opt/node22/lib/node_modules/')('playwright')
@@ -15,6 +15,9 @@ const start = await p.$('#start, #playPractice, [data-start]'); if (start) await
 await p.waitForTimeout(500); await p.keyboard.press('Space')
 if (process.env.HOLD) { await p.waitForTimeout(3500); await p.keyboard.down(process.env.HOLD) }
 let last = 0
+if (process.env.TRACKTOUR) {
+  for (const f of process.env.TRACKTOUR.split(',').map(Number)) { await p.evaluate((f) => { const tr = ROUND.arena.debug().track, i = Math.floor(tr.length * f), me = ROUND.beans.find((b) => b.human); me.x = tr[i].x; me.y = tr[i].y; me.ti = i; me.stun = 99 }, f); await p.waitForTimeout(900); await p.screenshot({ path: `${out}_f${f}.png` }) }
+}
 if (process.env.TOUR) { // teleport "you" up the course and shoot each stretch
   for (const y of process.env.TOUR.split(',').map(Number)) { await p.evaluate((y) => { const me = (typeof ROUND !== 'undefined' && ROUND ? ROUND.beans : game.beans).find((b) => b.human); me.y = y; me.x = 480; me.stun = 99 }, y); await p.waitForTimeout(700); await p.screenshot({ path: `${out}_y${y}.png` }) }
 }
