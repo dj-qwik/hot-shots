@@ -36,6 +36,10 @@ services:
         value: production
       - key: CHAIN_ID
         value: "4663"            # Robinhood Chain MAINNET (real ETH). Testnet is 46630.
+      - key: ESCROW_ADDRESS
+        value: "0xafac56848fB3849a1463AaB36d6f57960A2ae3a0"   # mainnet escrow (deployed by the server 2026-10-21); pinned so a DB loss can't redeploy
+      - key: ESCROW_DEPLOY_BLOCK
+        value: "94330091"
       - key: ALLOW_RAW_KEYS_ON_MAINNET
         value: i-understand      # lean launch: server-held keys + embedded co-signers (see README "Going to mainnet")
       - key: PRIVY_APP_ID
