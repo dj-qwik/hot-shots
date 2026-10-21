@@ -268,6 +268,8 @@ export async function createCash({ createMatch, onLobbyChange }) {
       for (const id of r?.touched ?? []) active.add(id)
       for (const id of [...active]) {
         const step = await worker.tick(id)
+        // a match that doesn't exist on this escrow (e.g. it lives on the legacy one): not ours to track
+        if (step.kind === 'idle' && /^status 0:/.test(step.reason || '')) { active.delete(id); continue }
         C.settleStatus.set(id, step)
         if (step.kind === 'sent') log(id.slice(0, 10), step.action, step.hash)
         if (step.kind === 'done') { log(id.slice(0, 10), step.status); active.delete(id); await store.set('active-matches', [...active]) }
