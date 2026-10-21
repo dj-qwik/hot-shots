@@ -32,7 +32,8 @@ export interface HSWalletApi {
 }
 declare global { interface Window { HSWallet?: HSWalletApi } }
 
-const fire = () => window.dispatchEvent(new Event('hswallet'))
+// returns nothing on purpose: React treats an effect's return value as its cleanup function
+const fire = (): void => { window.dispatchEvent(new Event('hswallet')) }
 
 function Bridge({ cfg, chain, pub }: { cfg: CashConfig; chain: Chain; pub: PublicClient }) {
   const privy = usePrivy()
@@ -79,7 +80,7 @@ function Bridge({ cfg, chain, pub }: { cfg: CashConfig; chain: Chain; pub: Publi
     window.HSWallet = api
     fire()
   }, [cfg, chain, pub])
-  useEffect(fire, [privy.ready, privy.authenticated, wallet?.address, wallet?.chainId])
+  useEffect(() => { fire() }, [privy.ready, privy.authenticated, wallet?.address, wallet?.chainId])
   return null
 }
 
