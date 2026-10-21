@@ -10,6 +10,7 @@
  * Fund it by sending ETH to its address; cash out with send(). Privy's own pop-ups are off: every action
  * is confirmed by an explicit button in the game (Deposit / Leave / Send to <address>).
  */
+import './polyfills' // must stay first
 import { createRoot } from 'react-dom/client'
 import { useEffect, useRef } from 'react'
 import { PrivyProvider, useCreateWallet, usePrivy, useWallets, type ConnectedWallet } from '@privy-io/react-auth'
