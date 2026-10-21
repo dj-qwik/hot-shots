@@ -6,10 +6,11 @@ export default defineConfig({
   plugins: [react()],
   define: { 'process.env.NODE_ENV': JSON.stringify('production') },
   build: {
-    outDir: '../../game/dist-web/wallet',
+    outDir: process.env.WALLET_OUT || '../../game/dist-web/wallet',
     emptyOutDir: true,
     target: 'es2022',
-    sourcemap: false,
+    sourcemap: !!process.env.WALLET_DEBUG,
+    minify: process.env.WALLET_DEBUG ? false : 'esbuild',
     lib: { entry: 'src/bridge.tsx', formats: ['es'], fileName: () => 'wallet.js' },
     rollupOptions: { output: { chunkFileNames: 'chunks/[name]-[hash].js', assetFileNames: 'assets/[name]-[hash][extname]' } },
   },

@@ -2,6 +2,8 @@ name: ci
 on:
   push:
   pull_request:
+permissions:
+  contents: write
 jobs:
   game:
     runs-on: ubuntu-latest
@@ -15,8 +17,14 @@ jobs:
         run: npm run build
       - name: wallet bridge output
         run: ls -la game/dist-web/wallet && du -sh game/dist-web/wallet
-      - uses: actions/upload-artifact@v4
-        with: { name: wallet-bridge, path: game/dist-web/wallet, retention-days: 7 }
+      - name: publish an unminified wallet bundle to the ci-wallet-debug branch (for debugging in browsers)
+        if: github.ref == 'refs/heads/multiplayer'
+        run: |
+          WALLET_DEBUG=1 WALLET_OUT=/tmp/wallet-debug npm run build:wallet -w @hotshots/web
+          npm ls @privy-io/react-auth react react-dom viem --all 2>/dev/null | head -40 > /tmp/wallet-debug/versions.txt || true
+          cd /tmp/wallet-debug && git init -q && git checkout -q -b ci-wallet-debug && git add -A
+          git -c user.name=ci -c user.email=ci@users.noreply.github.com commit -qm "wallet debug build ${GITHUB_SHA}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" ci-wallet-debug
       - name: determinism + network tests
         run: npm test -w @hotshots/game
       - name: real-money end to end on a local chain (deploy, deposit, match, replay-verified co-sign, payout)
