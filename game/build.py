@@ -54,7 +54,8 @@ function createSim(env = {{}}) {{
 }}
 """
 os.makedirs(out_dir, exist_ok=True)
-sim = "'use strict';\n" + det + '\n' + create_sim + "\nif (typeof module === 'object' && module.exports) module.exports = { createSim, DET_MATH, makeRng, hashNums, shuffleWith };\n"
+follow = rd('sim', '99_follow.js')
+sim = "'use strict';\n" + det + '\n' + create_sim + '\n' + follow + "\nif (typeof module === 'object' && module.exports) module.exports = { createSim, createFollower, DET_MATH, makeRng, hashNums, shuffleWith };\n"
 open(os.path.join(out_dir, 'sim.cjs'), 'w').write(sim)
 
 # ── browser bundle
@@ -63,7 +64,7 @@ env_obj = ', '.join(f'{n}: new Proxy({{}}, {{ get: (_, k) => (...a) => {n}[k](..
 client = sorted(f for f in os.listdir(S) if f.endswith('.js') and f[:2].isdigit())
 parts = ["'use strict';", det,
          '// browser global scope: real randomness + native maths (visuals); the simulation scope rebinds both',
-         'const DM = Math;\nconst RNG = Math.random;', '// ═════ sim/01_base.js (global copy) ═════\n' + base, create_sim,
+         'const DM = Math;\nconst RNG = Math.random;', '// ═════ sim/01_base.js (global copy) ═════\n' + base, create_sim, follow,
          f'const FX_ENV = {{ {env_fx}, {env_obj} }};',
          'const SIM0 = createSim({ fx: FX_ENV, seed: 1 }); // menus, attract mode, portraits',
          'const { ARENAS, makeBean, stepBean, collide, R, DIVE } = SIM0;']

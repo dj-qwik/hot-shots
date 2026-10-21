@@ -7,7 +7,14 @@ function packInput(inp) {
   const q = (v) => clamp(Math.round((v || 0) * 127), -127, 127) + 128;
   return q(inp.x) | (q(inp.y) << 8) | (inp.jump ? 1 << 16 : 0) | (inp.dive ? 1 << 17 : 0);
 }
-function unpackInput(p) { return { x: ((p & 255) - 128) / 127, y: (((p >> 8) & 255) - 128) / 127, jump: !!(p & (1 << 16)), dive: !!(p & (1 << 17)) }; }
+// Inputs come from untrusted browsers: clamp each axis and cap the stick at full strength so no client can
+// move faster than a real controller (e.g. a hacked client sending full right AND full down).
+function unpackInput(p) {
+  let x = clamp((p & 255) - 128, -127, 127) / 127, y = clamp(((p >> 8) & 255) - 128, -127, 127) / 127;
+  const m = x * x + y * y;
+  if (m > 1) { const k = 1 / Math.sqrt(m); x *= k; y *= k; }
+  return { x, y, jump: !!(p & (1 << 16)), dive: !!(p & (1 << 17)) };
+}
 const IDLE_INPUT = packInput({ x: 0, y: 0 });
 
 /**
