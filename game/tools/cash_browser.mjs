@@ -51,6 +51,11 @@ async function page(key, name) {
       balance: () => window.__bal(), sign: (m) => window.__sign(m), deposit: (id, s) => window.__write('joinMatch', id, s), leave: (id) => window.__write('leaveMatch', id),
       claim: () => window.__write('claim'), claimRefund: (id) => window.__write('claimRefund', id), send: (to, a) => window.__send(to, a), waitTx: (h) => window.__wait(h), explorerTx: (h) => 'https://explorer.testnet.chain.robinhood.com/tx/' + h, exportWallet: async () => {} }
     setTimeout(() => window.dispatchEvent(new Event('hswallet')), 300)
+    // flicker probe: every card pop-in, with the card title it popped
+    window.__pops = []
+    addEventListener('animationstart', (e) => { if (e.animationName === 'pop') window.__pops.push((document.querySelector('#ov h2, #ov h1')?.textContent || document.querySelector('#ov')?.textContent.slice(0, 40) || '').trim() + ' @' + (typeof game !== 'undefined' ? game.screen + '/' + game.phase : '')) }, true)
+    // and a re-render storm: balance changes every 2 s
+    setInterval(() => window.dispatchEvent(new Event('hswallet')), 2000)
   }, acct.address)
   await p.goto(director + '/'); await p.waitForTimeout(1500)
   return p
@@ -91,6 +96,10 @@ await A.screenshot({ path: path.join(OUT, 'c11_sent.png') })
 const destBal = await pub.getBalance({ address: DEST })
 console.log('cashed out to', DEST, ':', Number(destBal) / 1e18, 'ETH')
 if (destBal <= 0n) done(false, 'cash out did not arrive')
+const pops = await A.evaluate(() => window.__pops)
+const repeats = pops.filter((p, i) => i && p === pops[i - 1])
+console.log(pops)
+console.log('card pop-ins:', pops.length, '· same card popped twice in a row:', repeats.length, repeats.slice(0, 5))
 const errs = [...A.errs, ...B.errs]
 await browser.close()
-done(/Paid out/.test(line) && !errs.length, `browser cash flow · settlement line: "${line}" · page errors: ${errs.length ? errs.slice(0, 3).join(' | ') : 0} · shots in ${OUT}`)
+done(/Paid out/.test(line) && !errs.length && !repeats.length, `browser cash flow · settlement line: "${line}" · page errors: ${errs.length ? errs.slice(0, 3).join(' | ') : 0} · shots in ${OUT}`)

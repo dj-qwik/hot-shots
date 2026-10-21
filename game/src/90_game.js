@@ -47,7 +47,37 @@ function beginIntro(seconds) {
 }
 
 // ───────────────────────── overlays ─────────────────────────
-function showOverlay(html) { $('#ov').innerHTML = html || ''; $('#ov').hidden = !html; }
+// Redrawing a card that is already showing (balance tick, a player joining, a server status update) must
+// not replay its pop-in animation: that replay is the "flicker". Identical HTML is skipped outright; an
+// update to the same card (same screen, same title) swaps in place with animations held still.
+let OV_HTML = '', OV_KEY = '';
+function showOverlay(html) {
+  const ov = $('#ov'); html = html || '';
+  if (html === OV_HTML && ov.hidden === !html) return;
+  const key = html ? game.screen + '|' + ((html.match(/<h2[^>]*>([\s\S]*?)<\/h2>/) || [])[1] || '') : '';
+  const same = !!html && !ov.hidden && key === OV_KEY;
+  ov.classList.toggle('still', same);
+  if (same) { const t = document.createElement('div'); t.innerHTML = html; morphKids(ov, t); }
+  else ov.innerHTML = html;
+  ov.hidden = !html; OV_HTML = html; OV_KEY = key;
+}
+// Patch `el`'s children to match `to`'s, touching only what differs: images don't reload, the focused
+// field keeps focus and caret, hover states survive.
+function morphKids(el, to) {
+  const a = [...el.childNodes], b = [...to.childNodes];
+  for (let i = 0; i < b.length; i++) {
+    const x = a[i], y = b[i];
+    if (!x) { el.appendChild(y); continue; }
+    if (x.nodeType !== y.nodeType || x.nodeName !== y.nodeName || (x.id || '') !== (y.id || '')) { el.replaceChild(y, x); continue; }
+    if (x.nodeType !== 1) { if (x.nodeValue !== y.nodeValue) x.nodeValue = y.nodeValue; continue; }
+    for (const at of [...x.attributes]) if (!y.hasAttribute(at.name)) x.removeAttribute(at.name);
+    for (const at of [...y.attributes]) if (x.getAttribute(at.name) !== at.value) x.setAttribute(at.name, at.value);
+    if ((x.tagName === 'INPUT' || x.tagName === 'TEXTAREA') && x !== document.activeElement && x.value !== (y.getAttribute('value') || '')) x.value = y.getAttribute('value') || '';
+    if (x.tagName === 'BUTTON' || x.tagName === 'INPUT' || x.tagName === 'SELECT') x.disabled = y.hasAttribute('disabled');
+    morphKids(x, y);
+  }
+  for (let i = a.length - 1; i >= b.length; i--) a[i].remove();
+}
 // ───────────────────────── UI KIT: portraits, icons, pips ─────────────────────────
 const PORTRAITS = {};
 // Bean avatar rendered with the real in-game character art into a small canvas (cached as a data URL).

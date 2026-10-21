@@ -12,7 +12,7 @@ fs.mkdirSync(OUT, { recursive: true })
 const PORT = 21000 + ((Math.random() * 9000) | 0)
 const srv = spawn('node', ['server/index.mjs'], { env: { ...process.env, PORT: String(PORT) }, stdio: ['ignore', 'pipe', 'pipe'] })
 let srvLog = ''; srv.stdout.on('data', (d) => { srvLog += d }); srv.stderr.on('data', (d) => { srvLog += d })
-await new Promise((r) => setTimeout(r, 1200))
+for (let i = 0; i < 60; i++) { try { if ((await fetch(`http://127.0.0.1:${PORT}/healthz`)).ok) break } catch {} await new Promise((r) => setTimeout(r, 500)) }
 const browser = await chromium.launch()
 const base = `http://127.0.0.1:${PORT}/`
 const pages = []
