@@ -8,14 +8,24 @@ const meBean = () => game.beans.find((b) => b.i === game.me) || null;
 // A fresh, isolated simulation instance per round (the same code the server runs online).
 function bindRound(round) { ROUND = round; arena = round.arena; game.beans = round.beans; game.active = round.active; game.isFinal = round.isFinal; }
 
-// Rotation: never repeat any of the last 8 arenas, and never the same genre twice in a row.
+// Rotation: a shuffled deck of all arenas (remembered on this device) so every arena comes up before any
+// repeats; within a match no repeats and never the same genre twice in a row.
 function pickArena() {
   const keysA = Object.keys(ARENAS);
-  const recent = game.history.slice(-8);
+  let deck = []; try { deck = JSON.parse(localStorage.getItem('hs-deck') || '[]').filter((k) => ARENAS[k]); } catch {}
   const lastGenre = game.history.length ? ARENAS[game.history[game.history.length - 1]].genre : null;
-  let pool = keysA.filter((k) => !recent.includes(k) && ARENAS[k].genre !== lastGenre);
-  if (!pool.length) pool = keysA.filter((k) => !recent.includes(k));
-  return ARENAS[pool[(Math.random() * pool.length) | 0]];
+  const draw = (ok) => {
+    for (let pass = 0; pass < 2; pass++) {
+      const i = deck.findIndex(ok);
+      if (i >= 0) return deck.splice(i, 1)[0];
+      const fresh = [...keysA]; for (let j = fresh.length - 1; j > 0; j--) { const r = (Math.random() * (j + 1)) | 0; [fresh[j], fresh[r]] = [fresh[r], fresh[j]]; }
+      deck.push(...fresh);
+    }
+    return null;
+  };
+  const key = draw((k) => !game.history.includes(k) && ARENAS[k].genre !== lastGenre) || draw((k) => !game.history.includes(k));
+  try { localStorage.setItem('hs-deck', JSON.stringify(deck)); } catch {}
+  return ARENAS[key];
 }
 
 function startMatch() {

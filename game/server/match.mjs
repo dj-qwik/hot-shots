@@ -20,6 +20,17 @@ const JUMP = 1 << 16, DIVE = 1 << 17
 const WINS_TO_CHAMPION = 2
 // Round seeds come from 32 random bytes: the commitment keccak256(reveal) can't be brute-forced, and the
 // simulation seed is derived from the reveal so anyone holding the replay can re-run the round.
+const DECK = []
+function drawArena(keys, ok) {
+  for (let pass = 0; pass < 2; pass++) {
+    const i = DECK.findIndex(ok)
+    if (i >= 0) return DECK.splice(i, 1)[0]
+    // deck empty or nothing in it fits: deal a fresh shuffled deck behind what's left
+    const fresh = [...keys]; for (let j = fresh.length - 1; j > 0; j--) { const r = crypto.randomInt(j + 1); [fresh[j], fresh[r]] = [fresh[r], fresh[j]] }
+    DECK.push(...fresh)
+  }
+  return null
+}
 const newSeedReveal = () => '0x' + crypto.randomBytes(32).toString('hex')
 const simSeed = (reveal) => Number.parseInt(keccak256(reveal).slice(2, 10), 16) >>> 0
 const BOT_SKILL = [0.55, 0.82], BOT_SPEED = [0.9, 0.97] // keep in sync with src/sim/01_base.js
@@ -90,11 +101,12 @@ export class Match {
   }
 
   // ───────────── rounds
+  // Shuffled deck shared across matches: all 20 arenas come up before any repeats. Within a match: no
+  // repeats, and never the same genre twice in a row.
   pickArena() {
-    const recent = this.history.slice(-8), last = this.history.at(-1)
-    let pool = this.arenaKeys.filter((k) => !recent.includes(k) && this.genre[k] !== this.genre[last])
-    if (!pool.length) pool = this.arenaKeys.filter((k) => !recent.includes(k))
-    return pool[crypto.randomInt(pool.length)]
+    const last = this.history.at(-1)
+    const ok = (k) => !this.history.includes(k) && this.genre[k] !== this.genre[last]
+    return drawArena(this.arenaKeys, ok) ?? drawArena(this.arenaKeys, (k) => !this.history.includes(k))
   }
   contenders() {
     const w = this.roundWinners
