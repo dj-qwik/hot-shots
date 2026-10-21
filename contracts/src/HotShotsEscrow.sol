@@ -41,8 +41,9 @@ contract HotShotsEscrow is AccessControlDefaultAdminRules, Pausable, ReentrancyG
     uint8 public constant MAX_SIGNERS = 16;
 
     uint64 public constant MAX_ADMISSION_WINDOW = 2 days;
-    /// @dev >= 1 hour: Arbitrum Nitro lets the sequencer skew block timestamps by up to ~1 hour,
-    ///      so a shorter window could be skipped by a faulty sequencer.
+    /// @dev A dispute window is either 0 (INSTANT: the co-signed result pays out in the same
+    ///      transaction, no guardian veto) or >= 1 hour: Arbitrum Nitro lets the sequencer skew block
+    ///      timestamps by up to ~1 hour, so a shorter non-zero window could be skipped anyway.
     uint32 public constant MIN_DISPUTE_WINDOW = 1 hours;
     uint32 public constant MAX_DISPUTE_WINDOW = 7 days;
     uint64 public constant MIN_MATCH_DURATION = 30 minutes;
@@ -336,8 +337,11 @@ contract HotShotsEscrow is AccessControlDefaultAdminRules, Pausable, ReentrancyG
     ///         EIP-712 MatchResult, ordered by strictly ascending recovered signer address.
     ///         Deliberately NOT pausable: a pause must never run out the result deadline and turn a
     ///         legitimate win into a refund. The dispute window still guards every submitted result.
+    ///         With a zero dispute window the pot is paid out right here (instant settlement),
+    ///         unless the contract is paused, in which case finalizeSettlement pays it once unpaused.
     function submitResult(bytes32 matchId, address winner, bytes32 resultHash, bytes[] calldata signatures)
         external
+        nonReentrant
     {
         Match storage m = _matches[matchId];
         if (m.status != Status.LOCKED) revert BadStatus(m.status);
@@ -355,6 +359,7 @@ contract HotShotsEscrow is AccessControlDefaultAdminRules, Pausable, ReentrancyG
         emit ResultSubmitted(
             matchId, winner, resultHash, signerSetVersion, uint64(block.timestamp) + m.disputeWindow
         );
+        if (m.disputeWindow == 0 && !paused()) _settle(matchId, m);
     }
 
     /// @notice Guardian rejects a submitted result during its dispute window. The match returns to
@@ -383,7 +388,11 @@ contract HotShotsEscrow is AccessControlDefaultAdminRules, Pausable, ReentrancyG
         uint64 finalizableAt = m.resultSubmittedAt + m.disputeWindow;
         if (block.timestamp < finalizableAt) revert DisputeWindowOpen(finalizableAt);
         if (paused() && block.timestamp < uint256(finalizableAt) + PAUSED_FINALIZE_DELAY) revert EnforcedPause();
+        _settle(matchId, m);
+    }
 
+    /// @dev Pays a RESULT_FINAL match exactly once: champion share + house share.
+    function _settle(bytes32 matchId, Match storage m) private {
         (uint256 pot, uint256 championAmount, uint256 houseAmount) = splitPot(m.entryAmount, m.playerCount);
         address champion = m.winner;
 
@@ -627,7 +636,7 @@ contract HotShotsEscrow is AccessControlDefaultAdminRules, Pausable, ReentrancyG
     }
 
     function _setDisputeWindow(uint32 window) private {
-        if (window < MIN_DISPUTE_WINDOW || window > MAX_DISPUTE_WINDOW) revert BadParam();
+        if (window != 0 && (window < MIN_DISPUTE_WINDOW || window > MAX_DISPUTE_WINDOW)) revert BadParam();
         disputeWindow = window;
         emit DisputeWindowUpdated(window);
     }

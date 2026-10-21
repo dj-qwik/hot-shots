@@ -2,7 +2,7 @@
 // Email sign-in (Privy) creates each player a "game wallet" they own; we never hold its keys and MetaMask is
 // never involved. Players add ETH by sending to its address and cash out any time from the Wallet screen. Stakes go
 // from that wallet into the escrow contract; only the contract pays out (90% champion / 10% house), after
-// independent co-signers replay the match and a 1-hour dispute window passes. Leave before the lobby
+// independent co-signers replay the match; the escrow pays the champion in that same transaction. Leave before the lobby
 // locks and you get your stake back.
 const CASH = (() => {
   const C = { cfg: null, privy: null, w: null, bal: null, verified: null, stake: null, size: 4, lobby: null, busy: '', err: '', tx: null, match: null, settle: null, co: { to: '', amt: '', confirm: false, busy: '', err: '', tx: null, sent: '' }, back: 'home' };
@@ -187,7 +187,7 @@ const CASH = (() => {
           ${walletBlock()}
           ${C.err ? `<p style="color:var(--coral)">${esc(C.err)}</p>` : ''}
           <button class="btn ghost small" id="back" style="justify-self:start">Back</button>
-          <ul class="fine"><li>Your stake goes into the Hot Shots escrow contract, not to us. Leave before the lobby locks for a full refund.</li><li>Real players only. If the lobby doesn't fill in 10 minutes, everyone is refunded automatically.</li><li>Results are replayed and co-signed by independent servers; payout follows a 1-hour dispute window.</li></ul>
+          <ul class="fine"><li>Your stake goes into the Hot Shots escrow contract, not to us. Leave before the lobby locks for a full refund.</li><li>Real players only. If the lobby doesn't fill in 10 minutes, everyone is refunded automatically.</li><li>Results are replayed and co-signed by independent servers, then the champion is paid instantly.</li></ul>
         </div>
       </div>
     </div>`;
@@ -306,20 +306,20 @@ const CASH = (() => {
     try {
       const s = await (await fetch('/api/match/' + id)).json(); C.settle = s;
       const el = document.getElementById('settleLine'); if (el) el.innerHTML = settleText(s);
-      if (s.status !== 'SETTLED' && s.status !== 'REFUNDED') setTimeout(pollSettlement, 6000);
+      if (s.status !== 'SETTLED' && s.status !== 'REFUNDED') setTimeout(pollSettlement, 1500);
       else refresh();
-    } catch { setTimeout(pollSettlement, 8000); }
+    } catch { setTimeout(pollSettlement, 4000); }
   }
   function settleText(s) {
-    if (!s) return 'Waiting for the co-signers to replay the match…';
-    if (s.status === 'LOCKED') return 'Independent co-signers are replaying every round…';
+    if (!s) return 'Paying out… the co-signers are checking the match.';
+    if (s.status === 'LOCKED') return 'Paying out… independent co-signers are replaying every round (a few seconds).';
     if (s.status === 'RESULT_FINAL') { const at = (Number(s.resultSubmittedAt) + Number(s.disputeWindow)) * 1000; return `Result is on chain. Payout after the dispute window (about ${new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}).`; }
-    if (s.status === 'SETTLED') return 'Paid out ✓ — the escrow sent the pot.';
+    if (s.status === 'SETTLED') return "Paid out ✓ — the pot is in the champion's game wallet, ready to play again.";
     return 'Status: ' + s.status;
   }
   function championExtra(w) {
     if (!C.match) return '';
-    setTimeout(pollSettlement, 1500);
+    setTimeout(pollSettlement, 1000);
     const stake = parseEth(C.match.stake), { pot, house, champ } = splitPot(stake, C.match.size), mine = w && w.i === game.me;
     return `<div class="receipt">
         <div class="r"><span>Pot · ${C.match.size} × ${fmtEth(stake)}</span><b>${fmtEth(pot)} ${unit()}</b></div>

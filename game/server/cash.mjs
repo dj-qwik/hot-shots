@@ -100,9 +100,14 @@ export async function createCash({ createMatch, onLobbyChange }) {
   }
 
   // ── find or deploy the escrow
+  const ESCROW_KEY = `escrow:${chainId}:v2`
+  // 0 = winners are paid in the same transaction that records the co-signed result
+  const DISPUTE_WINDOW = Number(process.env.DISPUTE_WINDOW ?? 0)
   async function ensureEscrow() {
     if (process.env.ESCROW_ADDRESS) { C.escrow = getAddress(process.env.ESCROW_ADDRESS); C.deployBlock = BigInt(process.env.ESCROW_DEPLOY_BLOCK || 0); return }
-    const saved = await store.get(`escrow:${chainId}`)
+    // v2 = instant-payout escrow (dispute window 0). An older escrow keeps a "legacy" lane below so
+    // matches still pending on it get paid.
+    const saved = await store.get(ESCROW_KEY)
     if (saved) { C.escrow = getAddress(saved.address); C.deployBlock = BigInt(saved.block); return }
     if (chainId === ROBINHOOD_MAINNET_ID) throw new Error('mainnet: deploy the escrow with the Safe as admin and set ESCROW_ADDRESS')
     if (!owner) throw new Error('set OWNER_ADDRESS (your wallet: receives the 10% house fee and can pause/veto)')
@@ -120,7 +125,7 @@ export async function createCash({ createMatch, onLobbyChange }) {
     C.status = 'deploying'
     log(`deploying HotShotsEscrow on ${chainId}: admin(operator)=${C.operator} guardian+treasury=${owner} signers=${signers.join(',')} m=${threshold}`)
     const hash = await wallet.deployContract({ abi: escrowAbi, bytecode: BYTECODE,
-      args: [BigInt(chainId), C.operator, 2 * 24 * 3600, owner, sortAddresses(signers), threshold, 3600, 3 * 3600] })
+      args: [BigInt(chainId), C.operator, 2 * 24 * 3600, owner, sortAddresses(signers), threshold, DISPUTE_WINDOW, 3 * 3600] })
     const rc = await pub.waitForTransactionReceipt({ hash, timeout: 180000 })
     if (rc.status !== 'success' || !rc.contractAddress) throw new Error('escrow deploy failed ' + hash)
     const escrow = getAddress(rc.contractAddress)
@@ -129,7 +134,7 @@ export async function createCash({ createMatch, onLobbyChange }) {
       const h = await wallet.writeContract({ address: escrow, abi: escrowAbi, functionName: 'grantRole', args: [id, who] })
       await pub.waitForTransactionReceipt({ hash: h, timeout: 180000 })
     }
-    await store.set(`escrow:${chainId}`, { address: escrow, block: String(rc.blockNumber), signers, threshold, tx: hash })
+    await store.set(ESCROW_KEY, { address: escrow, block: String(rc.blockNumber), signers, threshold, tx: hash })
     C.escrow = escrow; C.deployBlock = rc.blockNumber
     log('escrow live at', escrow, 'block', rc.blockNumber)
   }
@@ -140,10 +145,40 @@ export async function createCash({ createMatch, onLobbyChange }) {
   const active = new Set()
   const evidenceSource = { async get(matchId) { const e = await store.getEvidence(matchId); return e ? e.evidence : null } }
 
+  // older escrow (before instant payouts): keep finalizing whatever is still pending there
+  async function startLegacy() {
+    const old = await store.get(`escrow:${chainId}`)
+    if (!old || !C.escrow || getAddress(old.address) === C.escrow) return
+    const lesc = new EscrowClient(chainId, rpcUrl, getAddress(old.address), operator)
+    const lledger = new MemoryLedger()
+    const lworker = new SettlementWorker(lesc, lledger, evidenceSource, cosignerUrls.map((u) => httpCosigner(u, authToken)))
+    const lindexer = new EscrowIndexer(lesc, lledger, BigInt(old.block), 0n)
+    const lactive = new Set(), quiet = { n: 0 }
+    log('legacy escrow lane', old.address)
+    const tick = async () => {
+      let r = null
+      try {
+        r = await lindexer.tick()
+        for (const id of r?.touched ?? []) lactive.add(id)
+        for (const id of [...lactive]) {
+          const step = await lworker.tick(id)
+          C.settleStatus.set(id, step)
+          if (step.kind === 'sent') log('legacy', id.slice(0, 10), step.action, step.hash)
+          if (step.kind === 'done') lactive.delete(id)
+        }
+        C.legacy = { escrow: old.address, pending: lactive.size }
+      } catch (e) { log('legacy lane', e.message) }
+      setTimeout(tick, r ? 300 : 30000) // catch up quickly, then idle
+    }
+    tick()
+    C.legacyEscrow = lesc
+  }
+
   C.start = async () => {
     try {
       await refreshBalance()
       await ensureEscrow()
+      startLegacy().catch((e) => log('legacy lane failed', e.message))
       escrow = new EscrowClient(chainId, rpcUrl, C.escrow, operator)
       await escrow.assertChain()
       lobbyEscrow = new LobbyEscrow(escrow, ledger)
@@ -218,12 +253,16 @@ export async function createCash({ createMatch, onLobbyChange }) {
     const evidence = { chainId, escrow: C.escrow, matchId: L.matchId, rosterHash: rosterHash(seats), configHash: (await escrow.getMatch(L.matchId)).configHash, rounds }
     await store.putEvidence(L.matchId, evidence, replays)
     log('evidence published', L.matchId.slice(0, 10), 'rounds', rounds.length, 'champion', seats[m.champion])
+    active.add(L.matchId); kick() // settle right away: winners are paid the moment the co-signers agree
   }
   C.getEvidence = (matchId) => store.getEvidence(matchId)
 
   // ── settlement loop: index events, drive every locked/aborted match to payout/refund
   C.settleStatus = new Map() // matchId → last step text
+  let loopTimer = null, looping = false, again = false
+  function kick() { if (looping) { again = true; return } clearTimeout(loopTimer); settleLoop() }
   async function settleLoop() {
+    looping = true
     try {
       const r = await indexer.tick()
       for (const id of r?.touched ?? []) active.add(id)
@@ -235,10 +274,12 @@ export async function createCash({ createMatch, onLobbyChange }) {
       }
       await refreshBalance()
     } catch (e) { log('settle loop', e.message) }
-    setTimeout(settleLoop, Number(process.env.POLL_INTERVAL_MS || 4000))
+    looping = false
+    loopTimer = setTimeout(settleLoop, again ? 250 : Number(process.env.POLL_INTERVAL_MS || 4000)); again = false
   }
   C.matchStatus = async (matchId) => {
-    const m = await escrow.getMatch(matchId)
+    let m = await escrow.getMatch(matchId)
+    if (!m.status && C.legacyEscrow) m = await C.legacyEscrow.getMatch(matchId) // older match
     const step = C.settleStatus.get(matchId)
     return { status: Object.keys(MatchStatus).find((k) => MatchStatus[k] === m.status) || String(m.status), winner: m.winner, resultSubmittedAt: String(m.resultSubmittedAt), disputeWindow: m.disputeWindow, step: step ? (step.reason || step.action || step.status || step.kind) : null }
   }

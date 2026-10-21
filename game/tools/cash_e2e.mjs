@@ -111,16 +111,13 @@ if (ps.some((p) => p.desync)) fail('desync ' + ps.map((p) => p.desync))
 const matchId = ps[0].lobby.matchId, champSeat = ps[0].champ.w
 console.log(`✓ match played: ${ps[0].rounds.length} rounds, round winners ${JSON.stringify(ps[0].rounds)}, champion seat ${champSeat}`)
 
-// 3) co-signers replay + sign, worker submits; then the dispute window passes and the worker finalizes
-let st
-for (let i = 0; i < 120; i++) { await sleep(1000); st = await pub.readContract({ address: escrow, abi: escrowAbi, functionName: 'getMatch', args: [matchId] }); if (st.status === 4) break }
-if (st.status !== 4) fail('result not submitted, status ' + st.status)
+// 3) co-signers replay + sign, worker submits; instant escrow pays the champion in that same transaction
+let st; const tEnd = Date.now()
+for (let i = 0; i < 240; i++) { await sleep(250); st = await pub.readContract({ address: escrow, abi: escrowAbi, functionName: 'getMatch', args: [matchId] }); if (st.status === 5) break }
+if (st.status !== 5) fail('not paid out, status ' + st.status)
 const ev = await (await fetch(`${director}/api/evidence/${matchId}`)).json()
 const roster = ev.replays[0].seats
-console.log(`✓ result submitted on chain after both co-signers replayed ${ev.replays.length} round(s) · winner ${st.winner}`)
-await pub.request({ method: 'evm_increaseTime', params: [3601] }); await pub.request({ method: 'evm_mine', params: [] })
-for (let i = 0; i < 60; i++) { await sleep(1000); st = await pub.readContract({ address: escrow, abi: escrowAbi, functionName: 'getMatch', args: [matchId] }); if (st.status === 5) break }
-if (st.status !== 5) fail('not settled, status ' + st.status)
+console.log(`✓ paid out ${((Date.now() - tEnd) / 1000).toFixed(1)} s after the match ended (both co-signers replayed ${ev.replays.length} round(s)) · winner ${st.winner}`)
 const champ = getAddress(roster[champSeat])
 const after = await Promise.all(KEYS.slice(0, 2).map((k) => pub.getBalance({ address: privateKeyToAccount(k).address })))
 const ownerAfter = await pub.getBalance({ address: OWNER })

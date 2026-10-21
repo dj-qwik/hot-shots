@@ -22,7 +22,7 @@ What runs where:
 |---|---|---|
 | Game server (`game/server`) | `hot-shots-game` | Authoritative 60 Hz matches over WebSockets, lobbies, wallet sign-in, evidence + replays at `/api/evidence/:matchId`, status at `/status` |
 | Result co-signers (`services/settlement/src/cosignerMain.ts`) | 2 processes inside `hot-shots-game` (testnet) | Each replays every round of the deterministic simulation before signing; refuses on any mismatch |
-| Settlement worker | inside the game server | Submits co-signed results, waits out the 1 h dispute window, pays out / pushes refunds |
+| Settlement worker | inside the game server | Submits co-signed results, the escrow pays the champion in that same transaction (instant payout; DISPUTE_WINDOW=0), pushes refunds |
 | Wallet bridge (`apps/web/src/bridge.tsx`) | served at `/wallet/wallet.js` | Privy login, embedded wallets, deposits; the game talks to it via `window.HSWallet` |
 | Escrow (`contracts/`) | Robinhood Chain | Deployed by the server on first boot (testnet only) |
 
@@ -126,7 +126,7 @@ The three components — `WalletPanel`, `StakeConfirm`, `SettlementStatus` — a
 ## Trust assumptions (say these out loud to players and auditors)
 
 - **Admin multisig** can rotate result signers and change the treasury. A malicious signer set could name any roster player champion. Put the admin Safe behind an on-chain timelock (e.g. OpenZeppelin `TimelockController`, ≥ 48 h) so players can see signer changes coming and leave lobbies.
-- **Guardian** can veto a result during its dispute window or abort a locked match. That can deny a legitimate champion (everyone is refunded instead) but can never take funds.
+- **Guardian** can veto a result during its dispute window or abort a locked match. That can deny a legitimate champion (everyone is refunded instead) but can never take funds. With instant payout (the default, DISPUTE_WINDOW=0) there is no veto window: the co-signers' replay check is the protection.
 - **Co-signers** collectively decide the champion. Run them on separate infrastructure with separate keys and RPC providers.
 - A player who deposits from an L1 contract via a retryable ticket is recorded under its aliased L2 address. Normal Privy/EOA/smart-wallet users are unaffected.
 

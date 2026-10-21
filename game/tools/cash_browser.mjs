@@ -79,8 +79,6 @@ while (Date.now() - t0 < 240e3) {
 }
 await A.waitForSelector('#settleLine', { timeout: 30000 }); await A.waitForTimeout(6000); await A.screenshot({ path: path.join(OUT, 'c7_champion.png') })
 const mid = await A.evaluate(() => CASH.state.match.matchId)
-for (let i = 0; i < 60; i++) { const m = await pub.readContract({ address: cfg.escrow, abi: escrowAbi, functionName: 'getMatch', args: [mid] }); if (m.status === 4) break; await sleep(1000) }
-await pub.request({ method: 'evm_increaseTime', params: [3601] }); await pub.request({ method: 'evm_mine', params: [] })
 await A.waitForFunction(() => /Paid out/.test(document.getElementById('settleLine')?.textContent || ''), null, { timeout: 90000 }).catch(() => {})
 await A.screenshot({ path: path.join(OUT, 'c8_paid.png') })
 const line = await A.evaluate(() => document.getElementById('settleLine')?.textContent)
