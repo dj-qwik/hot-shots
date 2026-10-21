@@ -57,6 +57,8 @@ const json = (res, code, obj) => { res.writeHead(code, { 'content-type': 'applic
 async function api(url, res) {
   try {
     if (url.pathname === '/api/status-page') return statusPage(res)
+    const cm = url.pathname.match(/^\/api\/consent\/(0x[0-9a-fA-F]{40})$/)
+    if (cm) return json(res, 200, { consented: !!(cash && cash.store && await cash.store.get('consent:' + cm[1].toLowerCase())) })
     if (url.pathname === '/api/config') return json(res, 200, { cash: cash ? cash.publicConfig() : { enabled: false, status: 'off' }, privyAppId: process.env.PRIVY_APP_ID || null })
     const ev = url.pathname.match(/^\/api\/evidence\/(0x[0-9a-fA-F]{64})$/)
     if (ev && cash) { const e = await cash.getEvidence(ev[1]); return e ? json(res, 200, e) : json(res, 404, { error: 'not found' }) }
@@ -236,7 +238,10 @@ function handle(conn, m) {
 }
 
 // ───────────── wallet sign-in + cash queue
-const signInMessage = (address, nonce, chainId) => `Sign in to Hot Shots\n\nWallet: ${address}\nNonce: ${nonce}\nChain: ${chainId}\n\nThis only proves you own this wallet. It costs nothing and moves no funds.`
+// The two statements every player confirms once (21+ and entertainment only) are part of what they sign, so
+// the server keeps a signed record per wallet. Keep in sync with game/src/96_cash.js.
+const CONSENT_TEXT = 'I confirm I am 21 years of age or older.\nI understand this game is for entertainment purposes only.'
+const signInMessage = (address, nonce, chainId) => `Sign in to Hot Shots\n\nWallet: ${address}\nNonce: ${nonce}\nChain: ${chainId}\n\n${CONSENT_TEXT}\n\nThis only proves you own this wallet. It costs nothing and moves no funds.`
 async function auth(conn, m) {
   const S = conn.session
   if (!S || !cash || !isAddress(m.address || '') || typeof m.sig !== 'string') return conn.sendJson({ t: 'authFail', msg: 'Sign-in is not available.' })
@@ -248,6 +253,7 @@ async function auth(conn, m) {
   if (!ok) return conn.sendJson({ t: 'authFail', msg: 'Signature did not match that wallet.', nonce: S.nonce })
   S.wallet = address; S.user = 'wallet:' + address
   conn.sendJson({ t: 'authOk', wallet: address, nonce: S.nonce })
+  try { const k = 'consent:' + address.toLowerCase(); if (!(await cash.store.get(k))) await cash.store.set(k, { at: new Date().toISOString(), text: CONSENT_TEXT, sig: m.sig }) } catch (e) { console.warn('consent record', e.message) }
   // back into a running cash match by wallet (e.g. a new device)
   for (const mt of matches.values()) if (mt.mode === 'cash' && mt.state !== 'closed') {
     const seat = mt.seats.find((x) => x.wallet && x.wallet.toLowerCase() === address.toLowerCase())

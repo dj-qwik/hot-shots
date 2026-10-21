@@ -97,6 +97,9 @@ kbd { font: 800 .74rem var(--body); background: linear-gradient(180deg, #2f3874,
 .seg button { font: 800 .95rem var(--body); color: var(--text); background: rgba(255,255,255,.05); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px 6px; cursor: pointer; min-width: 64px; transition: background .15s; }
 .seg button:hover { background: rgba(255,255,255,.1); }
 .field { font: 700 1.05rem var(--body); color: var(--text); background: rgba(255,255,255,.06); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; outline: none; width: 100%; box-sizing: border-box; }
+.check { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: 14px; background: rgba(255,255,255,.05); border: 1px solid var(--line); cursor: pointer; color: var(--text); font-weight: 700; line-height: 1.35; }
+.check input { width: 22px; height: 22px; margin: 0; flex: none; accent-color: var(--coral, #FF557D); cursor: pointer; }
+.check:has(input:checked) { border-color: rgba(126,226,184,.55); background: rgba(126,226,184,.08); }
 .notice { display: grid; gap: 8px; padding: 12px 14px; border-radius: 14px; background: rgba(255,181,71,.08); border: 1px solid rgba(255,181,71,.35); }
 .notice b { color: var(--butter, #FFD95B); }
 .addr { display: flex; gap: 8px; align-items: center; min-width: 0; }

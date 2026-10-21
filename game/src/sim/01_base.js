@@ -9,6 +9,8 @@ const ROSTER = [
   ['Amber', '#FFB547'], ['Magenta', '#E85BD9'], ['Teal', '#2EC4B6'], ['Cobalt', '#4C7DFF'],
 ];
 const BOT_NAMES = ['Zip', 'Boop', 'Kiwi', 'Mochi', 'Turbo', 'Pip', 'Nova'];
+// Computer players: skill (decision quality) and top-speed ranges. Kept a notch below a good human. Server copy: server/match.mjs.
+const BOT_SKILL = [0.55, 0.82], BOT_SPEED = [0.9, 0.97];
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const rnd = (a, b) => a + RNG() * (b - a);

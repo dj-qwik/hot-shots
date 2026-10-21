@@ -22,6 +22,7 @@ const WINS_TO_CHAMPION = 2
 // simulation seed is derived from the reveal so anyone holding the replay can re-run the round.
 const newSeedReveal = () => '0x' + crypto.randomBytes(32).toString('hex')
 const simSeed = (reveal) => Number.parseInt(keccak256(reveal).slice(2, 10), 16) >>> 0
+const BOT_SKILL = [0.55, 0.82], BOT_SPEED = [0.9, 0.97] // keep in sync with src/sim/01_base.js
 const BOT_NAMES = ['Zip', 'Boop', 'Kiwi', 'Mochi', 'Turbo', 'Pip', 'Nova', 'Bloop', 'Dash', 'Fizz']
 
 export class Match {
@@ -76,7 +77,7 @@ export class Match {
   start() {
     // free play tops up with bots so nobody waits forever; cash matches never contain bots
     if (this.mode === 'free') while (this.seats.length < this.size) {
-      this.seats.push({ i: this.seats.length, kind: 'bot', name: this.names[this.seats.length % this.names.length], skill: 0.72 + Math.random() * 0.23, speedMul: 0.95 + Math.random() * 0.05, connected: true })
+      this.seats.push({ i: this.seats.length, kind: 'bot', name: this.names[this.seats.length % this.names.length], skill: BOT_SKILL[0] + Math.random() * (BOT_SKILL[1] - BOT_SKILL[0]), speedMul: BOT_SPEED[0] + Math.random() * (BOT_SPEED[1] - BOT_SPEED[0]), connected: true })
     }
     this.wins = this.seats.map(() => 0)
     this.hook(this, 'start')

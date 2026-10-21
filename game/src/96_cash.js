@@ -37,7 +37,8 @@ const CASH = (() => {
     renderPill(); rerender();
   }
   addEventListener('hswallet', refresh);
-  setInterval(() => { if (C.w && C.w.address) refresh(); }, 12000);
+  addEventListener('hswallet', () => setTimeout(checkConsent, 0));
+  setInterval(() => { if (C.w && C.w.address) { refresh(); checkConsent(); } }, 12000);
   // redraw only when something visible changed (a redraw mid-click would swallow the click)
   let lastHtml = '';
   const STATUS_RE = /<p id="cashStatus">[\s\S]*?<\/p>/;
@@ -90,6 +91,47 @@ const CASH = (() => {
     else openWallet();
   }, true);
 
+  // ── one-time confirmation after a player's first sign-in: 21+ and entertainment only.
+  // Remembered on this device, and on the server once they sign in for a cash match (it's part of the signed message).
+  const CONSENT_TEXT = 'I confirm I am 21 years of age or older.\nI understand this game is for entertainment purposes only.';
+  const ckey = (a) => 'hs-consent:' + String(a).toLowerCase();
+  const consentAsked = new Set();
+  function hasConsent(a) { if (!a) return false; if (C.consentOk === a.toLowerCase()) return true; try { return !!localStorage.getItem(ckey(a)); } catch { return false; } }
+  async function checkConsent() {
+    const a = C.w && C.w.authenticated && C.w.address; if (!a || hasConsent(a)) return;
+    if (!consentAsked.has(a)) {
+      consentAsked.add(a);
+      try { if ((await (await fetch('/api/consent/' + a)).json()).consented) { remember(a); return; } } catch {}
+    }
+    if (!hasConsent(a) && game.screen !== 'match' && game.screen !== 'consent') openConsent();
+  }
+  function remember(a) { C.consentOk = a.toLowerCase(); try { localStorage.setItem(ckey(a), new Date().toISOString()); } catch {} }
+  function consentCard() {
+    return `<div class="card lobby">
+      <h2>Before you play</h2>
+      <p>Hot Shots matches use ETH on Robinhood Chain. Please confirm both to continue.</p>
+      <label class="check"><input type="checkbox" id="cAge"><span>I am 21 years of age or older.</span></label>
+      <label class="check"><input type="checkbox" id="cFun"><span>I understand this game is for entertainment purposes only.</span></label>
+      <div class="row" style="gap:8px"><button class="btn primary big" id="consentOk" disabled>Continue</button><button class="btn ghost small" id="cashLogout">Sign out</button></div>
+      <p class="fine" style="padding:0">You'll only be asked once.</p>
+    </div>`;
+  }
+  function openConsent() {
+    if (game.screen !== 'consent') C.back = game.screen;
+    game.screen = 'consent'; showOverlay(consentCard());
+  }
+  function goBack() {
+    const b = C.back; C.co.confirm = false;
+    if (b === 'cashLobby' && C.lobby) { game.screen = 'cashLobby'; paint(lobbyCard()); }
+    else if (b === 'cashSetup' || b === 'cashLobby') { game.screen = 'cashSetup'; paint(setupCard()); }
+    else if (b === 'cashWallet') { game.screen = 'cashWallet'; lastHtml = ''; paint(walletCard()); }
+    else { game.screen = 'home'; showOverlay(homeCard()); }
+  }
+  $('#ov').addEventListener('change', (e) => {
+    if (e.target.id !== 'cAge' && e.target.id !== 'cFun') return;
+    const ok = document.getElementById('consentOk'); if (ok) ok.disabled = !(document.getElementById('cAge').checked && document.getElementById('cFun').checked);
+  });
+
   // ── screens
   function walletBlock() {
     if (!W()) return walletError() ? `<div class="notice"><b>The wallet couldn't start</b><span>${esc(walletError())}</span><span>Reload the page. If it keeps happening, please send a screenshot of this message.</span></div>` : `<p class="label">Loading wallet…</p>`;
@@ -139,12 +181,7 @@ const CASH = (() => {
     if (game.screen !== 'cashWallet') C.back = game.screen;
     C.co.err = ''; C.co.sent = ''; C.co.confirm = false; game.screen = 'cashWallet'; lastHtml = ''; paint(walletCard());
   }
-  function closeWallet() {
-    const b = C.back; C.co.confirm = false;
-    if (b === 'cashLobby' && C.lobby) { game.screen = 'cashLobby'; paint(lobbyCard()); }
-    else if (b === 'cashSetup' || b === 'cashLobby') { game.screen = 'cashSetup'; paint(setupCard()); }
-    else { game.screen = 'home'; showOverlay(homeCard()); }
-  }
+  function closeWallet() { if (C.back === 'cashWallet') C.back = 'home'; goBack(); }
   function cashOutCheck() {
     const o = C.co; o.err = ''; o.sent = '';
     const to = o.to.trim();
@@ -233,13 +270,14 @@ const CASH = (() => {
     return /reject|denied|cancel/i.test(m) ? 'Cancelled in your wallet.' : m.slice(0, 300);
   };
   async function verifyAndQueue() {
+    if (!hasConsent(C.w.address)) return openConsent();
     C.err = ''; C.busy = 'Connecting…'; rerender();
     try {
       await NET.connectAsync();
       if (!C.verified) {
         C.busy = 'Checking your wallet…'; rerender();
         const addr = C.w.address, nonce = NET.state.nonce;
-        const msg = `Sign in to Hot Shots\n\nWallet: ${addr}\nNonce: ${nonce}\nChain: ${C.cfg.chainId}\n\nThis only proves you own this wallet. It costs nothing and moves no funds.`;
+        const msg = `Sign in to Hot Shots\n\nWallet: ${addr}\nNonce: ${nonce}\nChain: ${C.cfg.chainId}\n\n${CONSENT_TEXT}\n\nThis only proves you own this wallet. It costs nothing and moves no funds.`;
         const sig = await W().sign(msg);
         const ok = await NET.request({ t: 'auth', address: addr, sig }, ['authOk', 'authFail']);
         if (ok.t !== 'authOk') throw new Error(ok.msg || 'Wallet check failed');
@@ -275,7 +313,8 @@ const CASH = (() => {
     else if (t.dataset.ctier) { C.stake = t.dataset.ctier; showOverlay(setupCard()); }
     else if (t.dataset.csize) { C.size = +t.dataset.csize; showOverlay(setupCard()); }
     else if (t.id === 'cashLogin') W() && W().login();
-    else if (t.id === 'cashLogout') { W() && W().logout(); C.verified = null; if (game.screen === 'cashWallet') closeWallet(); }
+    else if (t.id === 'cashLogout') { W() && W().logout(); C.verified = null; if (game.screen === 'cashWallet' || game.screen === 'consent') { game.screen = 'home'; showOverlay(homeCard()); } }
+    else if (t.id === 'consentOk') { if (document.getElementById('cAge')?.checked && document.getElementById('cFun')?.checked) { remember(C.w.address); goBack(); } }
     else if (t.id === 'cashWallet') openWallet();
     else if (t.id === 'walletBack') closeWallet();
     else if (t.id === 'coMax') { C.co.amt = 'max'; rerender(); }

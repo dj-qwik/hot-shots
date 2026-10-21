@@ -58,6 +58,13 @@ async function page(key, name) {
     setInterval(() => window.dispatchEvent(new Event('hswallet')), 2000)
   }, acct.address)
   await p.goto(director + '/'); await p.waitForTimeout(1500)
+  // first sign-in: the one-time 21+ / entertainment-only confirmation
+  await p.waitForSelector('#cAge', { timeout: 15000 })
+  if (name === 'Alice') await p.screenshot({ path: path.join(OUT, 'c0_consent.png') })
+  if (!(await p.$eval('#consentOk', (b) => b.disabled))) throw new Error('Continue enabled before both boxes are ticked')
+  await p.check('#cAge'); if (!(await p.$eval('#consentOk', (b) => b.disabled))) throw new Error('Continue enabled with one box')
+  await p.check('#cFun'); await p.click('#consentOk'); await p.waitForTimeout(300)
+  p.addr = acct.address
   return p
 }
 const A = await page(KEYS[0], 'Alice'), B = await page(KEYS[1], 'Bob')
@@ -96,6 +103,9 @@ await A.screenshot({ path: path.join(OUT, 'c11_sent.png') })
 const destBal = await pub.getBalance({ address: DEST })
 console.log('cashed out to', DEST, ':', Number(destBal) / 1e18, 'ETH')
 if (destBal <= 0n) done(false, 'cash out did not arrive')
+const consent = await (await fetch(director + '/api/consent/' + A.addr)).json()
+console.log('server consent record for Alice:', consent.consented)
+if (!consent.consented) done(false, 'consent not recorded on the server')
 const pops = await A.evaluate(() => window.__pops)
 const repeats = pops.filter((p, i) => i && p === pops[i - 1])
 console.log(pops)

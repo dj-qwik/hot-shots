@@ -73,7 +73,7 @@ function player(key, name) {
   P.ws.on('message', async (d) => {
     const m = JSON.parse(d)
     if (m.t === 'welcome') {
-      const msg = `Sign in to Hot Shots\n\nWallet: ${acct.address}\nNonce: ${m.nonce}\nChain: 46630\n\nThis only proves you own this wallet. It costs nothing and moves no funds.`
+      const msg = `Sign in to Hot Shots\n\nWallet: ${acct.address}\nNonce: ${m.nonce}\nChain: 46630\n\nI confirm I am 21 years of age or older.\nI understand this game is for entertainment purposes only.\n\nThis only proves you own this wallet. It costs nothing and moves no funds.`
       send({ t: 'auth', address: acct.address, sig: await acct.signMessage({ message: msg }) })
     } else if (m.t === 'authOk') { P.authed = true; send({ t: 'queue', mode: 'cash', size: P.size || 2, stake: '0.001' }) }
     else if (m.t === 'authFail' || m.t === 'error') { P.err = m.msg }

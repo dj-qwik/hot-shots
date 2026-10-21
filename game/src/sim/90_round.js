@@ -52,7 +52,20 @@ function createRound(cfg, rng = {}) {
       tick++; t += DT;
       for (const b of active) {
         let p = inputs[b.i];
-        if (p == null) { const keep = RNG; RNG = botRng; try { p = packInput(A.botInput(b, t) || {}); } finally { RNG = keep; } inputs[b.i] = p; }
+        if (p == null) {
+          const keep = RNG; RNG = botRng;
+          try {
+            // Bots aren't perfect: now and then a "late reaction" where they keep doing what they were doing
+            // (no new jumps or dives) for a moment. Less skilled bots lapse more often.
+            if (b.lapse > 0) { b.lapse -= DT; p = (b.lastP ?? IDLE_INPUT) & 0xffff; }
+            else {
+              p = packInput(A.botInput(b, t) || {});
+              if (RNG() < (1.15 - b.skill) * 0.009) b.lapse = 0.2 + RNG() * 0.3;
+            }
+            b.lastP = p;
+          } finally { RNG = keep; }
+          inputs[b.i] = p;
+        }
         stepBean(b, unpackInput(p), DT, A.maxSpeed, A.diveSpeed, A.mods ? A.mods(b) : null);
       }
       collide(active);

@@ -22,7 +22,7 @@ function startMatch() {
   // offline roster: you are seat 0, bots fill the rest with a spread of skill
   game.me = 0;
   game.players = Array.from({ length: game.size }, (_, i) => i === 0 ? { i, name: 'You', human: true }
-    : { i, name: BOT_NAMES[(i - 1) % BOT_NAMES.length], skill: rnd(0.72, 0.95), speedMul: rnd(0.95, 1) });
+    : { i, name: BOT_NAMES[(i - 1) % BOT_NAMES.length], skill: rnd(BOT_SKILL[0], BOT_SKILL[1]), speedMul: rnd(BOT_SPEED[0], BOT_SPEED[1]) });
   game.wins = Array(game.size).fill(0); game.round = 0; game.history = []; game.roundWinners = [];
   nextRound();
 }
