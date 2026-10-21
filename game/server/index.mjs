@@ -10,6 +10,7 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer } from 'ws'
 import { Match, T } from './match.mjs'
+import { verifyMessage, getAddress, isAddress, parseEther, formatEther } from 'viem'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
@@ -24,6 +25,7 @@ const log = (...a) => console.log(new Date().toISOString(), ...a)
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json' }
 function serveStatic(req, res) {
   const url = new URL(req.url, 'http://x')
+  if (url.pathname.startsWith('/api/')) return api(url, res)
   if (url.pathname === '/healthz') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ ok: true, matches: matches.size, players: conns.size, uptime: process.uptime() | 0 })) }
   let p = path.normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, '')
   if (p.endsWith('/')) p += 'index.html'
@@ -49,6 +51,17 @@ function gzipped(file) {
   if (c && c.m === m) return c.buf
   const buf = zlib.gzipSync(fs.readFileSync(file), { level: 9 }); gzCache.set(file, { m, buf }); return buf
 }
+const json = (res, code, obj) => { res.writeHead(code, { 'content-type': 'application/json', 'cache-control': 'no-store', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(obj)) }
+async function api(url, res) {
+  try {
+    if (url.pathname === '/api/config') return json(res, 200, { cash: cash ? cash.publicConfig() : { enabled: false, status: 'off' }, privyAppId: process.env.PRIVY_APP_ID || null })
+    const ev = url.pathname.match(/^\/api\/evidence\/(0x[0-9a-fA-F]{64})$/)
+    if (ev && cash) { const e = await cash.getEvidence(ev[1]); return e ? json(res, 200, e) : json(res, 404, { error: 'not found' }) }
+    const st = url.pathname.match(/^\/api\/match\/(0x[0-9a-fA-F]{64})$/)
+    if (st && cash && cash.status === 'ready') return json(res, 200, await cash.matchStatus(st[1]))
+    return json(res, 404, { error: 'not found' })
+  } catch (e) { return json(res, 500, { error: e.message }) }
+}
 const server = http.createServer(serveStatic)
 
 // ───────────── matchmaking
@@ -63,11 +76,39 @@ function findOrCreate(mode, size, stake) {
 }
 function onMatch(m, ev, data) {
   if (ev === 'start') log('match start', m.id.slice(0, 8), m.mode, m.size, m.seats.map((s) => s.name).join(','))
-  if (ev === 'champion') log('match champion', m.id.slice(0, 8), m.seats[data.winner].name, 'rounds', m.roundNo)
+  if (ev === 'champion') {
+    log('match champion', m.id.slice(0, 8), m.seats[data.winner].name, 'rounds', m.roundNo)
+    if (m.mode === 'cash' && cash) cash.publishEvidence(m.lobby, m).catch((e) => log('evidence error', e))
+  }
   if (ev === 'closed') {
     matches.delete(m.id)
     for (const [tok, s] of sessions) if (s.match === m) { s.match = null; s.seat = null }
   }
+}
+
+// ───────────── real-money matches (enabled when the operator secret is configured)
+let cash = null
+if (process.env.OPERATOR_SECRET) {
+  const { createCash } = await import('./cash.mjs')
+  cash = await createCash({
+    createMatch: (L) => startCashMatch(L),
+    onLobbyChange: (L) => { for (const [w, c] of L.waiting) c.sendJson(cash.lobbyView(L, w)) },
+  })
+  cash.start()
+}
+function startCashMatch(L) {
+  const m = new Match({ id: L.lobbyId, mode: 'cash', size: L.size, stake: formatEther(L.stakeWei), createSim, hook: onMatch })
+  m.lobby = L
+  m.seats = L.roster.map((wallet, i) => {
+    const c = L.waiting.get(wallet.toLowerCase())
+    const sess = c?.session
+    const seat = { i, kind: 'human', name: sess?.name || wallet.slice(0, 6) + '…' + wallet.slice(-4), wallet, conn: c || null, connected: !!c, input: 0x8080, applied: 0, pressJ: false, pressD: false, ready: false }
+    if (c) { c.match = m; c.seat = seat; if (sess) { sess.match = m; sess.seat = seat } }
+    return seat
+  })
+  matches.set(m.id, m)
+  m.start()
+  return m
 }
 
 // ───────────── WebSockets
@@ -111,7 +152,8 @@ function handle(conn, m) {
       if (!tok) { tok = crypto.randomBytes(18).toString('base64url'); sessions.set(tok, { user: 'guest:' + tok.slice(0, 8), name: cleanName(m.name), match: null, seat: null }) }
       const s = sessions.get(tok); s.name = cleanName(m.name || s.name)
       conn.session = s
-      conn.sendJson({ t: 'welcome', token: tok, name: s.name, sizes: FREE_SIZES, tick: T.TICK_MS })
+      s.nonce = crypto.randomBytes(12).toString('hex')
+      conn.sendJson({ t: 'welcome', token: tok, name: s.name, sizes: FREE_SIZES, tick: T.TICK_MS, nonce: s.nonce, wallet: s.wallet || null, cash: cash ? cash.publicConfig() : null })
       if (s.match && s.seat && s.match.state !== 'closed') {
         if (s.seat.conn && s.seat.conn !== conn) s.seat.conn.ws.close(4000, 'replaced')
         conn.match = s.match; conn.seat = s.seat
@@ -122,19 +164,22 @@ function handle(conn, m) {
     }
     case 'ping': return conn.sendJson({ t: 'pong', c: m.c })
   }
+  if (m.t === 'auth') return void auth(conn, m)
   if (!conn.session) return
   const S = conn.session
   switch (m.t) {
     case 'queue': {
       if (conn.match && conn.match.state !== 'closed') return
       const size = FREE_SIZES.includes(+m.size) ? +m.size : 4
-      if (m.mode !== 'free') return conn.sendJson({ t: 'error', code: 'mode', msg: 'Real-money matches are not enabled on this server yet.' })
+      if (m.mode === 'cash') return void queueCash(conn, m)
+      if (m.mode !== 'free') return
       const match = findOrCreate('free', size, null)
       const seat = match.join(conn, { name: S.name, user: S.user })
       if (!seat) return conn.sendJson({ t: 'error', code: 'full', msg: 'That lobby just filled. Try again.' })
       conn.match = match; conn.seat = seat; S.match = match; S.seat = seat
       return
     }
+    case 'leaveCash': { if (conn.cashLobby) { conn.cashLobby.waiting.delete(S.wallet?.toLowerCase()); conn.cashLobby = null } return conn.sendJson({ t: 'left' }) }
     case 'leave': {
       if (conn.match) { conn.match.disconnect(conn.seat) }
       conn.match = null; conn.seat = null; S.match = null; S.seat = null
@@ -144,6 +189,37 @@ function handle(conn, m) {
     case 'ready': if (conn.match && conn.seat) conn.match.ready(conn.seat); return
     case 'resync': if (conn.match && conn.seat) conn.sendJson(conn.match.syncMsg(conn.seat)); return
   }
+}
+
+// ───────────── wallet sign-in + cash queue
+const signInMessage = (address, nonce, chainId) => `Sign in to Hot Shots\n\nWallet: ${address}\nNonce: ${nonce}\nChain: ${chainId}\n\nThis only proves you own this wallet. It costs nothing and moves no funds.`
+async function auth(conn, m) {
+  const S = conn.session
+  if (!S || !cash || !isAddress(m.address || '') || typeof m.sig !== 'string') return conn.sendJson({ t: 'authFail', msg: 'Sign-in is not available.' })
+  const address = getAddress(m.address)
+  let ok = false
+  try { ok = await verifyMessage({ address, message: signInMessage(address, S.nonce, cash.chainId), signature: m.sig }) } catch {}
+  if (!ok) try { ok = await cash.pub.verifyMessage({ address, message: signInMessage(address, S.nonce, cash.chainId), signature: m.sig }) } catch {} // smart-contract wallets
+  S.nonce = crypto.randomBytes(12).toString('hex') // single use
+  if (!ok) return conn.sendJson({ t: 'authFail', msg: 'Signature did not match that wallet.', nonce: S.nonce })
+  S.wallet = address; S.user = 'wallet:' + address
+  conn.sendJson({ t: 'authOk', wallet: address, nonce: S.nonce })
+  // back into a running cash match by wallet (e.g. a new device)
+  for (const mt of matches.values()) if (mt.mode === 'cash' && mt.state !== 'closed') {
+    const seat = mt.seats.find((x) => x.wallet && x.wallet.toLowerCase() === address.toLowerCase())
+    if (seat && seat.conn !== conn) { conn.match = mt; conn.seat = seat; S.match = mt; S.seat = seat; seat.name = S.name || seat.name; mt.reconnect(seat, conn) }
+  }
+}
+async function queueCash(conn, m) {
+  const S = conn.session
+  if (!cash || cash.status !== 'ready') return conn.sendJson({ t: 'error', code: 'cash', msg: 'Real-money play is still being set up on this server.' })
+  if (!S.wallet) return conn.sendJson({ t: 'error', code: 'auth', msg: 'Sign in with your wallet first.' })
+  let stakeWei; try { stakeWei = parseEther(String(m.stake)) } catch { return }
+  const cfg = cash.publicConfig()
+  if (!cfg.tiers.includes(formatEther(stakeWei)) || !cfg.sizes.includes(+m.size)) return conn.sendJson({ t: 'error', code: 'tier', msg: 'Pick one of the listed stakes and lobby sizes.' })
+  const L = await cash.findOrOpen(stakeWei, +m.size)
+  L.waiting.set(S.wallet.toLowerCase(), conn); conn.cashLobby = L
+  conn.sendJson(cash.lobbyView(L, S.wallet))
 }
 
 // ───────────── the clock: every match advances on one fixed timeline

@@ -1,5 +1,6 @@
 import { type Hex, type LocalAccount, type Address, type TypedDataDefinition } from 'viem'
 import { privateKeyToAccount, toAccount } from 'viem/accounts'
+import { keccak256, toBytes } from 'viem'
 
 /**
  * Server-side signing. Two roles, two separate keys, never in the browser:
@@ -38,4 +39,14 @@ export function kmsAccount(remote: RemoteSigner): LocalAccount {
       return remote.signDigest(hashTypedData(td as TypedDataDefinition))
     },
   }) as LocalAccount
+}
+
+/**
+ * Testnet convenience: a key derived from a long random secret that the host generates and stores
+ * (Render `generateValue: true`), so no person ever sees or pastes a private key. The same secret
+ * always yields the same address. Mainnet must use a KMS/HSM signer instead (enforced by callers).
+ */
+export function derivedAccount(secret: string, role: string): LocalAccount {
+  if (!secret || secret.length < 32) throw new Error(`${role}: secret missing or too short`)
+  return privateKeyToAccount(keccak256(toBytes(`hotshots:${role}:v1:${secret}`)))
 }

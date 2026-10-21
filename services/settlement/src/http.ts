@@ -2,7 +2,7 @@ import { createServer, type Server } from 'node:http'
 import { timingSafeEqual } from 'node:crypto'
 import type { LocalAccount } from 'viem'
 import type { MatchEvidence } from '@hotshots/shared'
-import { CosignRefusal, cosign, type CosignRequest, type CosignResponse } from './cosigner.ts'
+import { CosignRefusal, cosign, type CosignRequest, type CosignResponse, type ReplayCheck } from './cosigner.ts'
 import type { EscrowClient } from './escrowClient.ts'
 import type { CosignerTransport } from './worker.ts'
 
@@ -16,10 +16,10 @@ function authOk(header: string | undefined, token: string): boolean {
 }
 
 /** HTTP server for one co-signer process. Put it behind mTLS / private networking in production. */
-export function cosignerServer(escrow: EscrowClient, account: LocalAccount, authToken: string): Server {
+export function cosignerServer(escrow: EscrowClient | (() => EscrowClient | null), account: LocalAccount, authToken: string, replay?: ReplayCheck): Server {
   return createServer(async (req, res) => {
     if (req.method === 'GET' && req.url === '/health') {
-      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ signer: account.address }))
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ signer: account.address, replayVerification: !!replay }))
       return
     }
     if (req.method !== 'POST' || req.url !== '/sign') return void res.writeHead(404).end()
@@ -32,7 +32,9 @@ export function cosignerServer(escrow: EscrowClient, account: LocalAccount, auth
     }
     try {
       const parsed = JSON.parse(body, reviveBig) as { evidence: MatchEvidence }
-      const out = await cosign(escrow, account, { evidence: parsed.evidence })
+      const esc = typeof escrow === 'function' ? escrow() : escrow
+      if (!esc) throw new CosignRefusal('escrow not known yet')
+      const out = await cosign(esc, account, { evidence: parsed.evidence }, replay)
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(out))
     } catch (e) {
       const status = e instanceof CosignRefusal ? 422 : 500

@@ -2,6 +2,7 @@
 // The server is the only authority: it runs the deterministic simulation, decides winners, and streams
 // every tick's inputs (and the random draws the tick consumed) so browsers can replay it exactly.
 import crypto from 'node:crypto'
+import { keccak256 } from 'viem'
 
 export const T = {
   INTRO_MS: 5000, // rules card ("5 seconds to keep things moving")
@@ -17,7 +18,10 @@ export const T = {
 }
 const JUMP = 1 << 16, DIVE = 1 << 17
 const WINS_TO_CHAMPION = 2
-const rand32 = () => crypto.randomBytes(4).readUInt32LE(0)
+// Round seeds come from 32 random bytes: the commitment keccak256(reveal) can't be brute-forced, and the
+// simulation seed is derived from the reveal so anyone holding the replay can re-run the round.
+const newSeedReveal = () => '0x' + crypto.randomBytes(32).toString('hex')
+const simSeed = (reveal) => Number.parseInt(keccak256(reveal).slice(2, 10), 16) >>> 0
 const BOT_NAMES = ['Zip', 'Boop', 'Kiwi', 'Mochi', 'Turbo', 'Pip', 'Nova', 'Bloop', 'Dash', 'Fizz']
 
 export class Match {
@@ -101,12 +105,12 @@ export class Match {
     this.roundNo++
     const key = this.pickArena(); this.history.push(key)
     const active = this.contenders(), isFinal = active.length !== this.seats.length
-    const seed = rand32()
+    const seedReveal = newSeedReveal(), seed = simSeed(seedReveal)
     this.rec = []
     this.round = this.createSim({ seed: 1 }).createRound({ key, seed, players: this.playersCfg(), active, isFinal, botSalt: this.id }, { record: this.rec })
     this.init = this.rec.splice(0)
     this.frames = []; this.pending = []; this.lastHash = null
-    this.audit.push({ n: this.roundNo, key, seed, active, inputs: [] })
+    this.audit.push({ n: this.roundNo, key, seedReveal, active, players: this.playersCfg().map((p) => ({ i: p.i, speedMul: p.speedMul })), inputs: [] })
     for (const s of this.humans) { s.ready = false; s.applied = 0; s.pressJ = s.pressD = false }
     this.phase('intro', T.INTRO_MS)
     this.broadcast(this.roundMsg())
