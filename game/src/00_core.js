@@ -125,6 +125,7 @@ function startCountdown() {
   game.phase = 'countdown'; game.phaseT = 0; showOverlay('');
 }
 addEventListener('keydown', (e) => {
+  if (e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return; // typing in a field isn't steering
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat && game.phase === 'intro') { e.preventDefault(); startCountdown(); return; }
   keys.add(e.code);

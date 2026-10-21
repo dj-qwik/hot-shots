@@ -1,10 +1,11 @@
 // ───────────────────────── REAL-MONEY PLAY (testnet ETH on Robinhood Chain, via Privy) ─────────────────────────
-// The wallet lives in Privy (email login creates one automatically, or connect MetaMask etc.). Stakes go
-// from YOUR wallet into the escrow contract; only the contract pays out (90% champion / 10% house), after
+// Email sign-in (Privy) creates each player a "game wallet" they own; we never hold its keys and MetaMask is
+// never involved. Players add ETH by sending to its address and cash out any time from the Wallet screen. Stakes go
+// from that wallet into the escrow contract; only the contract pays out (90% champion / 10% house), after
 // independent co-signers replay the match and a 1-hour dispute window passes. Leave before the lobby
 // locks and you get your stake back.
 const CASH = (() => {
-  const C = { cfg: null, privy: null, w: null, bal: null, verified: null, stake: null, size: 4, lobby: null, busy: '', err: '', tx: null, match: null, settle: null };
+  const C = { cfg: null, privy: null, w: null, bal: null, verified: null, stake: null, size: 4, lobby: null, busy: '', err: '', tx: null, match: null, settle: null, co: { to: '', amt: '', confirm: false, busy: '', err: '', tx: null, sent: '' }, back: 'home' };
   const FAUCET = 'https://faucet.testnet.chain.robinhood.com/';
   const GAS_BUFFER = parseEth('0.0003');
   const W = () => window.HSWallet;
@@ -46,7 +47,14 @@ const CASH = (() => {
     const el = document.getElementById('cashStatus'), m = html.match(STATUS_RE);
     if (el && m) el.outerHTML = m[0];
   };
-  const rerender = () => { if (game.screen === 'cashSetup') paint(setupCard()); else if (game.screen === 'cashLobby') paint(lobbyCard()); };
+  const rerender = () => {
+    if (game.screen === 'cashSetup') paint(setupCard()); else if (game.screen === 'cashLobby') paint(lobbyCard());
+    else if (game.screen === 'cashWallet') { // keep the cursor where it was if a balance update redraws the card
+      const f = document.activeElement, id = f && f.id, pos = f && f.selectionStart;
+      paint(walletCard());
+      const g = id && document.getElementById(id); if (g && g !== document.activeElement) { g.focus(); try { g.setSelectionRange(pos, pos); } catch {} }
+    }
+  };
 
   // ── wallet pill in the top bar
   function renderPill() {
@@ -64,7 +72,7 @@ const CASH = (() => {
       btn.textContent = 'Sign in'; btn.dataset.act = 'login';
     } else {
       amt.innerHTML = `<small>${short(C.w.address)}</small><b>${C.bal == null ? '…' : fmt4(C.bal)} ${unit()}</b>`;
-      btn.textContent = C.bal != null && C.bal < parseEth('0.002') ? `Get ${unit()}` : 'Wallet'; btn.dataset.act = C.bal != null && C.bal < parseEth('0.002') ? 'faucet' : 'menu';
+      btn.textContent = C.bal != null && C.bal < parseEth('0.002') ? `Add ${unit()}` : 'Wallet'; btn.dataset.act = 'wallet';
     }
   }
   const fmt4 = (w) => { const s = fmtEth(w); const [a, b = ''] = s.split('.'); return b ? `${a}.${b.slice(0, 4)}` : a; };
@@ -74,22 +82,87 @@ const CASH = (() => {
     e.stopImmediatePropagation();
     const act = e.currentTarget.dataset.act;
     if (act === 'login') W() && W().login();
-    else if (act === 'faucet') { game.screen = 'cashSetup'; C.showFund = true; showOverlay(setupCard()); }
-    else { game.screen = 'cashSetup'; C.showFund = false; showOverlay(setupCard()); }
+    else if (game.screen === 'match' && !document.getElementById('settleLine') && game.phase !== 'done') return; // not mid-match
+    else if (act === 'menu' && !W()) openSetup();
+    else openWallet();
   }, true);
 
   // ── screens
   function walletBlock() {
     if (!W()) return walletError() ? `<div class="notice"><b>The wallet couldn't start</b><span>${esc(walletError())}</span><span>Reload the page. If it keeps happening, please send a screenshot of this message.</span></div>` : `<p class="label">Loading wallet…</p>`;
     if (!C.w || !C.w.ready) return `<p class="label">Loading wallet…</p>`;
-    if (!C.w.authenticated || !C.w.address) return `<button class="btn primary big" id="cashLogin">Sign in to play</button><p class="fine" style="padding:0">Email login creates a wallet for you. You can also connect MetaMask or another wallet.</p>`;
+    if (!C.w.authenticated) return `<button class="btn primary big" id="cashLogin">Sign in with email</button><p class="fine" style="padding:0">We create a game wallet for you. No MetaMask, no browser extension, nothing to install.</p>`;
+    if (!C.w.address) return `<p class="label">Setting up your game wallet…</p>`;
     const stake = parseEth(C.stake), low = C.bal != null && C.bal < stake + GAS_BUFFER;
-    const fund = `<div class="notice"><b>Add ${unit()} to play</b><span>You need ${C.stake} ${unit()} for the stake plus a little for gas. Send testnet ETH to your wallet:</span>
-      <div class="addr"><code>${esc(C.w.address)}</code><button class="btn ghost small" id="cashCopy">Copy</button></div>
-      <a class="btn ghost small" href="${FAUCET}" target="_blank" rel="noopener">Open the Robinhood testnet faucet ↗</a></div>`;
-    return `${low || C.showFund ? fund : ''}
-      <button class="btn primary big" id="cashFind" ${low || C.busy ? 'disabled' : ''}>${C.busy || (C.verified ? `Find a ${C.size}-player lobby` : 'Verify wallet & find a lobby')}</button>
-      <div class="row" style="gap:8px"><span class="label">${esc(short(C.w.address))} · ${C.bal == null ? '…' : fmt4(C.bal)} ${unit()}</span>${C.w.embedded ? '<button class="btn ghost small" id="cashExport">Export key</button>' : ''}<button class="btn ghost small" id="cashLogout">Sign out</button></div>`;
+    const fund = `<div class="notice"><b>Add ${unit()} to play</b><span>You need ${C.stake} ${unit()} for the stake plus a little for network fees.</span><button class="btn primary small" id="cashWallet" style="justify-self:start">Add ${unit()}</button></div>`;
+    return `${low ? fund : ''}
+      <button class="btn primary big" id="cashFind" ${low || C.busy ? 'disabled' : ''}>${C.busy || `Find a ${C.size}-player lobby`}</button>
+      <div class="row" style="gap:8px"><span class="label">Game wallet · ${C.bal == null ? '…' : fmt4(C.bal)} ${unit()}</span><button class="btn ghost small" id="cashWallet">Wallet · cash out</button></div>`;
+  }
+  // ── the game wallet: add ETH (send to its address) · cash out (send anywhere) · export key · sign out
+  function walletCard() {
+    const net = C.cfg && C.cfg.chainId === 4663 ? 'Robinhood Chain' : 'Robinhood Chain testnet', o = C.co;
+    if (!W() || !C.w || !C.w.authenticated || !C.w.address) return `<div class="card lobby"><h2>Your game wallet</h2>${walletBlock()}<button class="btn ghost small" id="walletBack" style="justify-self:start">Back</button></div>`;
+    const txl = (h) => h && W().explorerTx(h) ? ` <a href="${W().explorerTx(h)}" target="_blank" rel="noopener">view on explorer ↗</a>` : '';
+    const amtShown = o.amt === 'max' ? 'Max' : o.amt;
+    const cashout = o.confirm
+      ? `<div class="notice"><b>Send ${o.amt === 'max' ? `everything (about ${fmt4(C.bal || 0n)} ${unit()}, minus the network fee)` : `${esc(o.amt)} ${unit()}`}?</b>
+          <span>To <code style="word-break:break-all">${esc(o.to)}</code></span><span>This can't be undone. Double-check the address is on ${net}.</span>
+          <div class="row" style="gap:8px"><button class="btn primary" id="coGo" ${o.busy ? 'disabled' : ''}>${o.busy || 'Yes, send it'}</button>${o.busy ? '' : '<button class="btn ghost" id="coCancel">Cancel</button>'}</div></div>`
+      : `<input class="field" id="coTo" placeholder="Send to address (0x…)" autocomplete="off" spellcheck="false" value="${esc(o.to)}">
+         <div class="row" style="gap:8px"><input class="field" id="coAmt" placeholder="Amount in ${unit()}" inputmode="decimal" autocomplete="off" value="${esc(amtShown)}" style="flex:1"><button class="btn ghost small" id="coMax">Max</button><button class="btn primary" id="coSend">Send</button></div>`;
+    return `<div class="card lobby">
+      <div class="row" style="justify-content:space-between"><h2>Your game wallet</h2><span class="label">${net}</span></div>
+      <div class="receipt"><div class="r win"><span>Balance</span><b>${C.bal == null ? '…' : fmt4(C.bal)} ${unit()}</b></div></div>
+      <div class="cols">
+        <div style="display:grid;gap:10px;align-content:start">
+          <span class="label">Add ${unit()}</span>
+          <p class="fine" style="padding:0;margin:0">Send ETH on <span style="color:var(--text);font-weight:700">${net}</span> to your game wallet, from any wallet or exchange. Sending on any other network loses it.</p>
+          <div class="addr"><code>${esc(C.w.address)}</code><button class="btn ghost small" id="cashCopy">Copy</button></div>
+          ${C.cfg && C.cfg.chainId !== 4663 ? `<a class="btn ghost small" href="${FAUCET}" target="_blank" rel="noopener" style="justify-self:start">Free test ETH: Robinhood faucet ↗</a>` : ''}
+        </div>
+        <div style="display:grid;gap:10px;align-content:start">
+          <span class="label">Cash out · any time</span>
+          ${cashout}
+          ${o.err ? `<p style="color:var(--coral);margin:0">${esc(o.err)}</p>` : ''}
+          ${o.sent ? `<p style="color:var(--mint);margin:0">${esc(o.sent)}${txl(o.tx)}</p>` : ''}
+        </div>
+      </div>
+      <div class="row" style="gap:8px"><button class="btn ghost small" id="walletBack">Back</button><button class="btn ghost small" id="cashExport">Export key</button><button class="btn ghost small" id="cashLogout">Sign out</button></div>
+      <ul class="fine"><li>This wallet is yours. Hot Shots never holds its keys and can't move your ETH; only you can, from here.</li><li>Stakes go from this wallet into the escrow contract, and winnings come back to it.</li></ul>
+    </div>`;
+  }
+  function openWallet() {
+    if (game.screen !== 'cashWallet') C.back = game.screen;
+    C.co.err = ''; C.co.sent = ''; C.co.confirm = false; game.screen = 'cashWallet'; lastHtml = ''; paint(walletCard());
+  }
+  function closeWallet() {
+    const b = C.back; C.co.confirm = false;
+    if (b === 'cashLobby' && C.lobby) { game.screen = 'cashLobby'; paint(lobbyCard()); }
+    else if (b === 'cashSetup' || b === 'cashLobby') { game.screen = 'cashSetup'; paint(setupCard()); }
+    else { game.screen = 'home'; showOverlay(homeCard()); }
+  }
+  function cashOutCheck() {
+    const o = C.co; o.err = ''; o.sent = '';
+    const to = o.to.trim();
+    if (!/^0x[0-9a-fA-F]{40}$/.test(to)) return o.err = 'Paste the full address you want to send to (0x followed by 40 characters).';
+    if (C.w && to.toLowerCase() === C.w.address.toLowerCase()) return o.err = "That's this game wallet's own address.";
+    if (C.cfg && C.cfg.escrow && to.toLowerCase() === C.cfg.escrow.toLowerCase()) return o.err = "That's the game's escrow contract; send to your own wallet instead.";
+    if (o.amt !== 'max') {
+      if (!/^\d*\.?\d+$/.test(o.amt.trim())) return o.err = 'Enter an amount, or tap Max.';
+      if (C.bal != null && parseEth(o.amt.trim()) > C.bal) return o.err = `That's more than your balance. Tap Max to send everything.`;
+    }
+    o.to = to; o.confirm = true;
+  }
+  async function cashOut() {
+    const o = C.co; o.busy = 'Sending…'; rerender();
+    try {
+      o.tx = await W().send(o.to, o.amt === 'max' ? 'max' : o.amt.trim());
+      o.busy = 'Confirming on chain…'; rerender();
+      if ((await W().waitTx(o.tx)) !== 'success') throw new Error('The transfer failed on chain.');
+      o.sent = 'Sent ✓'; o.amt = ''; SFX.score();
+    } catch (e) { o.err = errText(e); }
+    o.busy = ''; o.confirm = false; refresh();
   }
   function setupCard() {
     const tiers = (C.cfg && C.cfg.tiers) || TIERS, sizes = (C.cfg && C.cfg.sizes) || SIZES;
@@ -154,7 +227,7 @@ const CASH = (() => {
     try {
       await NET.connectAsync();
       if (!C.verified) {
-        C.busy = 'Sign the message in your wallet…'; rerender();
+        C.busy = 'Checking your wallet…'; rerender();
         const addr = C.w.address, nonce = NET.state.nonce;
         const msg = `Sign in to Hot Shots\n\nWallet: ${addr}\nNonce: ${nonce}\nChain: ${C.cfg.chainId}\n\nThis only proves you own this wallet. It costs nothing and moves no funds.`;
         const sig = await W().sign(msg);
@@ -167,7 +240,7 @@ const CASH = (() => {
     } catch (e) { C.err = errText(e); C.busy = ''; rerender(); }
   }
   async function deposit() {
-    const L = C.lobby; C.err = ''; C.busy = 'Confirm in your wallet…'; paint(lobbyCard());
+    const L = C.lobby; C.err = ''; C.busy = 'Depositing…'; paint(lobbyCard());
     try {
       C.tx = await W().deposit(L.matchId, L.stake);
       C.busy = 'Depositing…'; paint(lobbyCard());
@@ -178,7 +251,7 @@ const CASH = (() => {
     C.busy = ''; refresh(); paint(lobbyCard());
   }
   async function leave() {
-    const L = C.lobby; C.err = ''; C.busy = 'Confirm in your wallet…'; paint(lobbyCard());
+    const L = C.lobby; C.err = ''; C.busy = 'Leaving…'; paint(lobbyCard());
     try {
       C.tx = await W().leave(L.matchId); C.busy = 'Refunding…'; paint(lobbyCard());
       if ((await W().waitTx(C.tx)) !== 'success') throw new Error('The refund transaction failed.');
@@ -192,7 +265,13 @@ const CASH = (() => {
     else if (t.dataset.ctier) { C.stake = t.dataset.ctier; showOverlay(setupCard()); }
     else if (t.dataset.csize) { C.size = +t.dataset.csize; showOverlay(setupCard()); }
     else if (t.id === 'cashLogin') W() && W().login();
-    else if (t.id === 'cashLogout') { W() && W().logout(); C.verified = null; }
+    else if (t.id === 'cashLogout') { W() && W().logout(); C.verified = null; if (game.screen === 'cashWallet') closeWallet(); }
+    else if (t.id === 'cashWallet') openWallet();
+    else if (t.id === 'walletBack') closeWallet();
+    else if (t.id === 'coMax') { C.co.amt = 'max'; rerender(); }
+    else if (t.id === 'coSend') { cashOutCheck(); rerender(); }
+    else if (t.id === 'coCancel') { C.co.confirm = false; rerender(); }
+    else if (t.id === 'coGo') cashOut();
     else if (t.id === 'cashExport') W() && W().exportWallet().catch(() => {});
     else if (t.id === 'cashCopy') { navigator.clipboard?.writeText(C.w.address); t.textContent = 'Copied'; }
     else if (t.id === 'cashFind') verifyAndQueue();
@@ -201,6 +280,10 @@ const CASH = (() => {
     else if (t.id === 'cashBack') { NET.send({ t: 'leaveCash' }); C.lobby = null; game.screen = 'cashSetup'; showOverlay(setupCard()); }
   });
 
+  $('#ov').addEventListener('input', (e) => {
+    if (e.target.id === 'coTo') C.co.to = e.target.value;
+    else if (e.target.id === 'coAmt') C.co.amt = /^max$/i.test(e.target.value) ? 'max' : e.target.value;
+  });
   // ── server messages (routed from NET)
   function onLobby(m) {
     C.lobby = { ...m, at: performance.now() }; C.busy = C.busy === 'Finding a lobby…' ? '' : C.busy;
@@ -237,5 +320,5 @@ const CASH = (() => {
   }
   loadConfig();
   function openSetup() { C.match = null; C.lobby = null; C.err = ''; C.busy = ''; C.showFund = false; game.screen = 'cashSetup'; showOverlay(setupCard()); }
-  return { enabled, pending, walletError, onLobby, onMatch, championExtra, unit, openSetup, get state() { return C; }, refresh, isCashMatch: () => !!C.match };
+  return { enabled, pending, openWallet, walletError, onLobby, onMatch, championExtra, unit, openSetup, get state() { return C; }, refresh, isCashMatch: () => !!C.match };
 })();

@@ -40,11 +40,16 @@ async function page(key, name) {
   await p.exposeFunction('__sign', (msg) => acct.signMessage({ message: msg }))
   await p.exposeFunction('__bal', async () => (await pub.getBalance({ address: acct.address })).toString())
   await p.exposeFunction('__write', async (fn, matchId, stake) => wal.writeContract({ address: cfg.escrow, abi: escrowAbi, functionName: fn, args: fn === 'joinMatch' ? [matchId, []] : fn === 'claim' ? [] : [matchId], value: stake ? parseEther(stake) : undefined }))
+  await p.exposeFunction('__send', async (to, amt) => {
+    if (amt !== 'max') return wal.sendTransaction({ to, value: parseEther(amt) })
+    const bal = await pub.getBalance({ address: acct.address }), f = await pub.estimateFeesPerGas(), gas = 25000n
+    return wal.sendTransaction({ to, value: bal - gas * f.maxFeePerGas, gas, maxFeePerGas: f.maxFeePerGas, maxPriorityFeePerGas: f.maxPriorityFeePerGas })
+  })
   await p.exposeFunction('__wait', async (h) => (await pub.waitForTransactionReceipt({ hash: h })).status)
   await p.addInitScript((addr) => {
     window.HSWallet = { state: () => ({ ready: true, authenticated: true, address: addr, embedded: true, chainId: 46630 }), login() {}, async logout() {},
       balance: () => window.__bal(), sign: (m) => window.__sign(m), deposit: (id, s) => window.__write('joinMatch', id, s), leave: (id) => window.__write('leaveMatch', id),
-      claim: () => window.__write('claim'), claimRefund: (id) => window.__write('claimRefund', id), waitTx: (h) => window.__wait(h), explorerTx: (h) => 'https://explorer.testnet.chain.robinhood.com/tx/' + h, exportWallet: async () => {} }
+      claim: () => window.__write('claim'), claimRefund: (id) => window.__write('claimRefund', id), send: (to, a) => window.__send(to, a), waitTx: (h) => window.__wait(h), explorerTx: (h) => 'https://explorer.testnet.chain.robinhood.com/tx/' + h, exportWallet: async () => {} }
     setTimeout(() => window.dispatchEvent(new Event('hswallet')), 300)
   }, acct.address)
   await p.goto(director + '/'); await p.waitForTimeout(1500)
@@ -79,6 +84,15 @@ await pub.request({ method: 'evm_increaseTime', params: [3601] }); await pub.req
 await A.waitForFunction(() => /Paid out/.test(document.getElementById('settleLine')?.textContent || ''), null, { timeout: 90000 }).catch(() => {})
 await A.screenshot({ path: path.join(OUT, 'c8_paid.png') })
 const line = await A.evaluate(() => document.getElementById('settleLine')?.textContent)
+// cash out everything from the Wallet screen to a fresh address
+const DEST = '0x000000000000000000000000000000000000c0DE'
+await A.click('#faucet'); await A.waitForSelector('#coTo'); await A.screenshot({ path: path.join(OUT, 'c9_wallet.png') })
+await A.fill('#coTo', DEST); await A.click('#coMax'); await A.click('#coSend'); await A.waitForSelector('#coGo'); await A.screenshot({ path: path.join(OUT, 'c10_confirm.png') })
+await A.click('#coGo'); await A.waitForFunction(() => /Sent/.test(document.querySelector('#ov .card')?.textContent || ''), null, { timeout: 30000 }).catch(() => {})
+await A.screenshot({ path: path.join(OUT, 'c11_sent.png') })
+const destBal = await pub.getBalance({ address: DEST })
+console.log('cashed out to', DEST, ':', Number(destBal) / 1e18, 'ETH')
+if (destBal <= 0n) done(false, 'cash out did not arrive')
 const errs = [...A.errs, ...B.errs]
 await browser.close()
 done(/Paid out/.test(line) && !errs.length, `browser cash flow · settlement line: "${line}" · page errors: ${errs.length ? errs.slice(0, 3).join(' | ') : 0} · shots in ${OUT}`)
