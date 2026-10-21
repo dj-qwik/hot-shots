@@ -35,6 +35,7 @@ const CASH = (() => {
     if (C.w && C.w.address) { try { const b = await W().balance(); C.bal = b == null ? null : BigInt(b); } catch {} } else C.bal = null;
     if (C.verified && (!C.w || !C.w.address || C.w.address.toLowerCase() !== C.verified.toLowerCase())) C.verified = null;
     renderPill(); rerender();
+    if (game.screen === 'home' && !$('#ov').hidden) showOverlay(homeCard()); // the home card's wording depends on the wallet having loaded
   }
   addEventListener('hswallet', refresh);
   addEventListener('hswallet', () => setTimeout(checkConsent, 0));
