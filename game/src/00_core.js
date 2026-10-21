@@ -12,7 +12,7 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); } catch {} },
 };
 let wallet = (() => { const v = store.get('hs_test_wallet'); try { return v ? BigInt(v) : parseEth('0.05'); } catch { return parseEth('0.05'); } })();
-function setWallet(v) { wallet = v; store.set('hs_test_wallet', v.toString()); $('#bal').textContent = fmtEth(v); }
+function setWallet(v) { wallet = v; store.set('hs_test_wallet', v.toString()); const el = $('#bal'); if (el) el.textContent = fmtEth(v); }
 
 // ───────────────────────── tiny helpers ─────────────────────────
 const $ = (s) => document.querySelector(s);

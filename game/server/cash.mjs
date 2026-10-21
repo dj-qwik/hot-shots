@@ -39,7 +39,9 @@ export function deriveAccount(secret, role, chainId) {
 async function settingsStore() {
   if (process.env.DATABASE_URL) {
     const { default: pg } = await import('pg')
-    const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.PGSSL === 'off' ? false : { rejectUnauthorized: false } })
+    // Render's internal Postgres hostnames have no dots and don't use TLS; external ones need it
+    const host = new URL(process.env.DATABASE_URL).hostname
+    const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.PGSSL === 'off' || !host.includes('.') ? false : { rejectUnauthorized: false } })
     await pool.query('create table if not exists hs_settings (k text primary key, v jsonb not null, at timestamptz default now())')
     await pool.query('create table if not exists hs_evidence (match_id text primary key, evidence jsonb not null, replays jsonb not null, at timestamptz default now())')
     return {

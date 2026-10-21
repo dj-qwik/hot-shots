@@ -1,4 +1,45 @@
-# Hot Shots — crypto & payments layer
+# Hot Shots
+
+Thirty-second mini games, best 2 of 3, champion takes 90% of the pot — escrowed in ETH on **Robinhood Chain**
+(testnet `46630`, mainnet `4663`), wallets via **Privy**, multiplayer on **Render**.
+
+## Running it live (Render)
+
+The repo root `render.yaml` is a Render Blueprint. Every push to `main` redeploys.
+
+1. Render → **New → Blueprint** → this repo, branch `main`. It creates `hot-shots-game` (web service) and
+   `hot-shots-db` (Postgres). Render generates every secret; nobody ever sees a private key.
+2. Set **`OWNER_ADDRESS`** (your wallet) on `hot-shots-game` → Environment. It receives the 10% house fee and is
+   the escrow's guardian (can pause or veto a result).
+3. Open **`/status`** on the deployed site. Send ~0.05 testnet ETH to the server wallet shown there
+   ([Robinhood faucet](https://faucet.testnet.chain.robinhood.com/)). The server then deploys the escrow by itself,
+   registers its two result co-signers, and opens real-money play.
+4. In the Privy dashboard → Configuration → App settings → Domains, add the site's URL to **Allowed origins**.
+
+What runs where:
+
+| Piece | Where | Notes |
+|---|---|---|
+| Game server (`game/server`) | `hot-shots-game` | Authoritative 60 Hz matches over WebSockets, lobbies, wallet sign-in, evidence + replays at `/api/evidence/:matchId`, status at `/status` |
+| Result co-signers (`services/settlement/src/cosignerMain.ts`) | 2 processes inside `hot-shots-game` (testnet) | Each replays every round of the deterministic simulation before signing; refuses on any mismatch |
+| Settlement worker | inside the game server | Submits co-signed results, waits out the 1 h dispute window, pays out / pushes refunds |
+| Wallet bridge (`apps/web/src/bridge.tsx`) | served at `/wallet/wallet.js` | Privy login, embedded wallets, deposits; the game talks to it via `window.HSWallet` |
+| Escrow (`contracts/`) | Robinhood Chain | Deployed by the server on first boot (testnet only) |
+
+### Going to mainnet (not automated on purpose)
+- Deploy the escrow yourself with a **Safe multisig as admin** (`contracts/script/Deploy.s.sol` enforces this on 4663) and set `ESCROW_ADDRESS`.
+- Replace derived keys with **KMS/HSM signers** (`services/settlement/src/keys.ts` → `kmsAccount`); the code refuses raw keys on mainnet.
+- Run the co-signers on **independent infrastructure** (different provider/account), set `COSIGNER_URLS`, pin `ESCROW_ADDRESS` on each.
+- Get the escrow **independently audited**, and get legal advice on paid-entry contests where you operate.
+
+### Tests
+`npm test -w @hotshots/game` (determinism + network) · `node game/tools/cash_e2e.mjs` (needs `anvil`: deploy → deposit → match →
+replay-verified co-sign → payout, plus tampering refusals) · `node game/tools/accept.mjs <arena>` (exploit/fairness suite).
+CI runs all of these plus `forge test` on every push.
+
+---
+
+## Crypto & payments layer (details)
 
 Escrowed ETH entry stakes on **Robinhood Chain** (mainnet `4663`, testnet `46630`), wallets via **Privy**, and a 90/10 champion/house payout that happens exactly once. This repo is the money layer from spec §2, §11, §13–16 and §21; the game client mounts around it.
 

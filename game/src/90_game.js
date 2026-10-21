@@ -97,19 +97,19 @@ function homeCard() {
     <div class="hero">
       <h1 class="mega" aria-label="Hot Shots"><span class="w1">HOT</span><span class="w2">SHOTS</span></h1>
       <p class="tagline">Thirty-second mini games. <em>Best 2 out of 3.</em> The champion takes 90% of the pot.</p>
-      <div class="row">${NET.enabled() ? '<button class="btn primary big" id="goOnline">Play online</button><button class="btn ghost big" id="goCash">Test-ETH demo</button>' : '<button class="btn primary big" id="goCash">Play for test ETH</button>'}<button class="btn ghost big" id="goPractice">Practice</button></div>
+      <div class="row">${CASH.enabled() ? `<button class="btn primary big" id="goCashReal">Play for ${CASH.unit()}</button><button class="btn ghost big" id="goOnline">Free online</button>` : NET.enabled() ? '<button class="btn primary big" id="goOnline">Play online</button><button class="btn ghost big" id="goCash">Test-ETH demo</button>' : '<button class="btn primary big" id="goCash">Play for test ETH</button>'}<button class="btn ghost big" id="goPractice">Practice</button></div>
       <div class="panel">
         <div class="feats">
           <div class="feat">${icon('flag', '#37d8e9')}<b>20 arenas</b><span>Races, survival, steals and turf wars. Never the same twice in a row.</span></div>
           <div class="feat">${icon('crown', '#ffd95b')}<b>Best of 3</b><span>Win two rounds. Three different winners? They play a final.</span></div>
-          <div class="feat">${icon('shield', '#7ee2b8')}<b>Escrow rules</b><span>The pot is held by contract rules. Test mode simulates them here.</span></div>
+          <div class="feat">${icon('shield', '#7ee2b8')}<b>Escrow rules</b><span>${CASH.enabled() ? 'Stakes sit in an escrow contract on Robinhood Chain. Independent servers replay every match before it pays.' : NET.enabled() ? 'Free online play now. Real stakes run through an escrow contract on Robinhood Chain.' : 'The pot is held by contract rules. Test mode simulates them here.'}</span></div>
         </div>
         <div class="ctrls">
           <span><kbd>WASD</kbd> <kbd>Space</kbd> <kbd>Shift</kbd></span><span>Move · jump · dive (a lunge for tackles, chaining dives makes you dizzy)</span>
           <span><kbd>Stick</kbd> <kbd>✕</kbd> <kbd>□</kbd></span><span>Controller: move · jump · dive. <kbd>✕</kbd> also confirms menus.</span>
         </div>
       </div>
-      <p class="fine" style="padding:0">Test mode: simulated tETH in this browser only. No wallet, no blockchain, no real money.</p>
+      <p class="fine" style="padding:0">${CASH.enabled() ? (CASH.state.cfg.chainId === 4663 ? 'Real ETH on Robinhood Chain. Only stake what you can afford to lose.' : 'Robinhood Chain testnet: stakes are free test ETH from the Robinhood faucet. No real money.') : NET.enabled() ? 'Free play: no wallet, no money. The test-ETH demo is simulated in this browser only.' : 'Test mode: simulated tETH in this browser only. No wallet, no blockchain, no real money.'}</p>
     </div>
   </div>`;
 }
@@ -188,9 +188,10 @@ function championCard(w) {
       <span class="label">Match over · ${game.round} round${game.round === 1 ? "" : "s"}</span>
       <div class="row" style="justify-content:center;gap:0">${TROPHY}<img class="hero-img" src="${portrait(w.i, 'happy', 128)}" alt=""></div>
       <h1 style="font-size:clamp(1.8rem,5vw,2.6rem);color:${w.color}">${w.human ? 'Champion!' : `${esc(w.name)} is champion`}</h1>
-      ${cash ? `<div class="count"><span id="payCount">0</span> tETH</div><span class="label">paid to the champion</span>` : game.mode === 'online' ? '<p>Free online match — no stakes involved.</p>' : '<p>Practice match — no stakes involved.</p>'}
+      ${cash ? `<div class="count"><span id="payCount">0</span> tETH</div><span class="label">paid to the champion</span>` : game.mode === 'online' && CASH.isCashMatch() ? `<span class="label">Real-money match · ${CASH.unit()}</span>` : game.mode === 'online' ? '<p>Free online match — no stakes involved.</p>' : '<p>Practice match — no stakes involved.</p>'}
     </div>
     <div class="ch-right">
+      ${game.mode === 'online' && CASH.isCashMatch() ? CASH.championExtra(w) : ''}
       ${cash ? `<div class="receipt">
         <div class="r"><span>Pot · ${n} × ${fmtEth(game.stake)}</span><b>${fmtEth(pot)} tETH</b></div>
         <div class="r"><span>House 10%</span><b>${fmtEth(house)} tETH</b></div>
@@ -240,7 +241,7 @@ function fillLobby() {
   }, rnd(350, 750));
 }
 function goHome() { document.body.classList.remove('playing'); game.screen = 'home'; arena = null; $('#hud').hidden = true; $('#touch').hidden = true; showOverlay(homeCard()); }
-$('#faucet').addEventListener('click', () => { setWallet(wallet + parseEth('0.05')); SFX.score(); if (game.screen === 'lobby' && !game.deposited) showOverlay(lobbyCard()); });
+$('#faucet').addEventListener('click', () => { if (CASH.state.cfg && CASH.state.privy) return; setWallet(wallet + parseEth('0.05')); SFX.score(); if (game.screen === 'lobby' && !game.deposited) showOverlay(lobbyCard()); });
 $('#ff').addEventListener('click', () => { game.speed = game.speed === 1 ? 3 : 1; $('#ff').textContent = game.speed === 1 ? 'Fast-forward ×3' : 'Normal speed'; });
 
 // ───────────────────────── HUD ─────────────────────────

@@ -22,14 +22,21 @@ const NET = (() => {
       if (N.wanted) setTimeout(connect, Math.min(5000, 300 * 2 ** N.backoff++)); // back off, keep trying
     };
   }
+  const waiters = [];
   function on(m) {
+    for (let k = waiters.length - 1; k >= 0; k--) if (waiters[k].types.includes(m.t)) waiters.splice(k, 1)[0].res(m);
+    if (m.nonce) N.nonce = m.nonce;
     switch (m.t) {
+      case 'cashLobby': return CASH.onLobby(m);
+      case 'authOk': case 'authFail': return;
       case 'welcome':
         N.token = m.token; store.set('hs_token', m.token); N.status = 'online';
         if (N.queueing) { send({ t: 'queue', mode: 'free', size: N.queueSize }); N.queueing = false; }
         return;
       case 'pong': N.rtt = N.rtt ? N.rtt * 0.7 + (performance.now() - m.c) * 0.3 : performance.now() - m.c; return;
-      case 'error': N.err = m.msg; if (game.screen === 'onlineSetup') showOverlay(setupCard()); return;
+      case 'error':
+        if (game.screen === 'cashSetup' || game.screen === 'cashLobby') { CASH.state.err = m.msg; CASH.state.busy = ''; CASH.refresh(); return; }
+        N.err = m.msg; if (game.screen === 'onlineSetup') showOverlay(setupCard()); return;
       case 'lobby': N.lobby = m; game.screen = 'onlineLobby'; N.lobbyAt = performance.now(); showOverlay(lobbyCardOnline()); return;
       case 'left': return;
       case 'match': return startOnline(m);
@@ -46,6 +53,7 @@ const NET = (() => {
     }
   }
   function startOnline(m) {
+    if (m.mode === 'cash') CASH.onMatch(m); else CASH.state.match = null;
     game.mode = 'online'; game.screen = 'match'; game.size = m.size; game.me = m.you;
     game.players = m.seats.map((s) => ({ i: s.i, name: s.i === m.you ? 'You' : s.name, human: s.i === m.you, bot: s.bot }));
     game.wins = m.seats.map(() => 0); game.roundWinners = []; game.history = []; game.round = 0; N.champ = null;
@@ -198,7 +206,10 @@ const NET = (() => {
       t.disabled = true; t.textContent = 'Connecting…';
     }
     else if (t.id === 'netLeave' || (t.id === 'home' && game.mode === 'online')) { send({ t: 'leave' }); N.wanted = false; N.F = null; game.mode = 'practice'; goHome(); }
-    else if (t.id === 'again' && game.mode === 'online') { game.screen = 'onlineSetup'; showOverlay(setupCard()); }
+    else if (t.id === 'again' && game.mode === 'online') {
+      if (CASH.isCashMatch()) { game.mode = 'practice'; goHome(); CASH.openSetup(); }
+      else { game.screen = 'onlineSetup'; showOverlay(setupCard()); }
+    }
   });
   // reload mid-match? pick the seat back up
   if (enabled() && N.token) { N.wanted = true; connect(); }
@@ -206,5 +217,18 @@ const NET = (() => {
     send({ t: 'ready' });
     const b = document.getElementById('ready'); if (b) { b.disabled = true; b.textContent = 'Waiting for others…'; }
   }
-  return { enabled, frame, drawStatus, ready, withPrediction, get state() { return N; } };
+  function connectAsync() {
+    return new Promise((res, rej) => {
+      if (N.ws && N.ws.readyState === 1 && N.status === 'online') return res();
+      N.wanted = true; connect();
+      const t0 = Date.now(), iv = setInterval(() => {
+        if (N.status === 'online' && N.ws && N.ws.readyState === 1) { clearInterval(iv); res(); }
+        else if (Date.now() - t0 > 15000) { clearInterval(iv); rej(new Error('Could not reach the game server.')); }
+      }, 100);
+    });
+  }
+  function request(msg, types) {
+    return new Promise((res, rej) => { const w = { types, res }; waiters.push(w); send(msg); setTimeout(() => { const i = waiters.indexOf(w); if (i >= 0) { waiters.splice(i, 1); rej(new Error('The server did not answer.')); } }, 20000); });
+  }
+  return { enabled, frame, drawStatus, ready, withPrediction, send, connectAsync, request, get state() { return N; } };
 })();

@@ -26,6 +26,7 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; ch
 function serveStatic(req, res) {
   const url = new URL(req.url, 'http://x')
   if (url.pathname.startsWith('/api/')) return api(url, res)
+  if (url.pathname === '/status') return statusPage(res)
   if (url.pathname === '/healthz') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ ok: true, matches: matches.size, players: conns.size, uptime: process.uptime() | 0 })) }
   let p = path.normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, '')
   if (p.endsWith('/')) p += 'index.html'
@@ -54,6 +55,7 @@ function gzipped(file) {
 const json = (res, code, obj) => { res.writeHead(code, { 'content-type': 'application/json', 'cache-control': 'no-store', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(obj)) }
 async function api(url, res) {
   try {
+    if (url.pathname === '/api/status-page') return statusPage(res)
     if (url.pathname === '/api/config') return json(res, 200, { cash: cash ? cash.publicConfig() : { enabled: false, status: 'off' }, privyAppId: process.env.PRIVY_APP_ID || null })
     const ev = url.pathname.match(/^\/api\/evidence\/(0x[0-9a-fA-F]{64})$/)
     if (ev && cash) { const e = await cash.getEvidence(ev[1]); return e ? json(res, 200, e) : json(res, 404, { error: 'not found' }) }
@@ -61,6 +63,24 @@ async function api(url, res) {
     if (st && cash && cash.status === 'ready') return json(res, 200, await cash.matchStatus(st[1]))
     return json(res, 404, { error: 'not found' })
   } catch (e) { return json(res, 500, { error: e.message }) }
+}
+// Human-readable setup/health page (also reachable at /status)
+function statusPage(res) {
+  const c = cash ? cash.publicConfig() : null
+  const esc = (x) => String(x ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]))
+  const step = (ok, label, detail = '') => `<li class="${ok ? 'ok' : 'todo'}"><b>${ok ? '✓' : '…'} ${label}</b>${detail ? `<div>${detail}</div>` : ''}</li>`
+  const exp = c?.explorer ? (a) => `<a href="${c.explorer}/address/${a}" target="_blank" rel="noopener">${esc(a)}</a>` : esc
+  const needsGas = c && c.status === 'needs-gas'
+  const body = !c ? '<p>Real-money play is off on this server (no OPERATOR_SECRET).</p>' : `<ol>
+    ${step(!!c.owner, 'Owner wallet set', c.owner ? exp(c.owner) + ' — receives the 10% house fee and can pause or veto results' : 'Set OWNER_ADDRESS (your wallet) in Render → hot-shots-game → Environment, then redeploy.')}
+    ${step(!needsGas && c.status !== 'starting', 'Server wallet has gas', `${exp(c.operator)} · balance <b>${esc(c.operatorBalance)}</b> ${c.chainId === 4663 ? 'ETH' : 'testnet ETH'}${needsGas ? '<br>Send about 0.05 testnet ETH here (Robinhood faucet: <a href="https://faucet.testnet.chain.robinhood.com/" target="_blank" rel="noopener">faucet.testnet.chain.robinhood.com</a>). It pays gas for opening lobbies and paying out.' : ''}`)}
+    ${step(!!c.escrow, 'Escrow contract deployed', c.escrow ? exp(c.escrow) : c.status === 'deploying' ? 'Deploying now…' : 'Deploys automatically once the wallet has gas.')}
+    ${step(c.status === 'ready', 'Real-money matches open', c.status === 'ready' ? 'Players can now choose “Play for tETH”.' : c.error ? 'Error: ' + esc(c.error) : 'Status: ' + esc(c.status))}
+  </ol>`
+  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+  res.end(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="20"><title>Hot Shots · server status</title>
+<style>:root{color-scheme:dark}body{font:15px/1.5 system-ui,sans-serif;background:#0b0d2a;color:#e8eaff;margin:0;padding:24px 16px;max-width:760px;margin-inline:auto}h1{font-size:1.4rem}a{color:#37D8E9;word-break:break-all}ol{padding:0;list-style:none;display:grid;gap:10px}li{padding:12px 14px;border-radius:12px;background:#151a45;border:1px solid #262c66}li.ok b{color:#7EE2B8}li.todo b{color:#FFD95B}li div{opacity:.9;margin-top:4px}small{opacity:.6}</style></head>
+<body><h1>Hot Shots · server status</h1><p><small>Chain ${esc(c?.chainId ?? '-')} · ${matches.size} live match(es) · ${conns.size} connected · refreshes every 20 s</small></p>${body}<p><a href="/">← Back to the game</a></p></body></html>`)
 }
 const server = http.createServer(serveStatic)
 
@@ -88,6 +108,29 @@ function onMatch(m, ev, data) {
 
 // ───────────── real-money matches (enabled when the operator secret is configured)
 let cash = null
+// Testnet convenience: run the result co-signers as separate processes next to the game server, each with
+// its own secret, talking to it over HTTP exactly as they would from separate machines. For mainnet run
+// them on independent infrastructure and set COSIGNER_URLS instead.
+if (process.env.OPERATOR_SECRET && process.env.EMBEDDED_COSIGNERS === '2') {
+  const { spawn } = await import('node:child_process')
+  const repo = path.resolve(here, '..', '..')
+  process.env.COSIGNER_URLS = ''
+  for (const [k, n] of [['A', 'a'], ['B', 'b']]) {
+    const secret = process.env[`COSIGNER_${k}_SECRET`]
+    if (!secret) { log(`EMBEDDED_COSIGNERS: COSIGNER_${k}_SECRET missing`); continue }
+    const port = 8700 + (n === 'a' ? 1 : 2)
+    const env = { PATH: process.env.PATH, HOME: process.env.HOME, PORT: String(port), CHAIN_ID: process.env.CHAIN_ID || '46630', RPC_URL: process.env.RPC_URL || '', COSIGNER_SECRET: secret, COSIGNER_NAME: n,
+      COSIGNER_AUTH_TOKEN: process.env.COSIGNER_AUTH_TOKEN, DIRECTOR_URL: `http://127.0.0.1:${PORT}`, SIM_PATH: path.join(repo, 'game', 'dist', 'sim.cjs'), STAGE_REVISION: process.env.STAGE_REVISION || '1' }
+    if (!env.RPC_URL) delete env.RPC_URL
+    const start = () => {
+      const p = spawn(process.execPath, [path.join(repo, 'services', 'settlement', 'src', 'cosignerMain.ts')], { env, stdio: ['ignore', 'pipe', 'pipe'] })
+      p.stdout.on('data', (d) => process.stdout.write(`[cosigner-${n}] ${d}`)); p.stderr.on('data', (d) => process.stdout.write(`[cosigner-${n}] ${d}`))
+      p.on('exit', (c) => { log(`cosigner-${n} exited (${c}); restarting`); setTimeout(start, 3000) })
+    }
+    start()
+    process.env.COSIGNER_URLS += (process.env.COSIGNER_URLS ? ',' : '') + `http://127.0.0.1:${port}`
+  }
+}
 if (process.env.OPERATOR_SECRET) {
   const { createCash } = await import('./cash.mjs')
   cash = await createCash({
@@ -143,7 +186,7 @@ wss.on('connection', (ws, req) => {
   })
 })
 
-const cleanName = (s) => String(s || '').replace(/[^\p{L}\p{N} _.\-]/gu, '').trim().slice(0, 14) || 'Player'
+const cleanName = (s) => String(s || '').replace(/[^\p{L}\p{N} _.\-]/gu, '').trim().slice(0, 14)
 function handle(conn, m) {
   switch (m.t) {
     case 'hello': {
@@ -174,7 +217,7 @@ function handle(conn, m) {
       if (m.mode === 'cash') return void queueCash(conn, m)
       if (m.mode !== 'free') return
       const match = findOrCreate('free', size, null)
-      const seat = match.join(conn, { name: S.name, user: S.user })
+      const seat = match.join(conn, { name: S.name || 'Player', user: S.user })
       if (!seat) return conn.sendJson({ t: 'error', code: 'full', msg: 'That lobby just filled. Try again.' })
       conn.match = match; conn.seat = seat; S.match = match; S.seat = seat
       return

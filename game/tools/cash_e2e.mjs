@@ -48,10 +48,12 @@ await pub.request({ method: 'anvil_setBalance', params: [operator.address, '0x' 
 
 const token = 'cosigner-token-' + Math.random()
 const director = `http://127.0.0.1:${GAME}`
-for (const [n, p] of [['a', CA], ['b', CB]]) run('cosigner-' + n, 'node', ['services/settlement/src/cosignerMain.ts'], { PORT: String(p), CHAIN_ID: '46630', RPC_URL: rpc, COSIGNER_SECRET: secret('cs' + n), COSIGNER_NAME: n, COSIGNER_AUTH_TOKEN: token, DIRECTOR_URL: director, SIM_PATH: 'game/dist/sim.cjs' })
+const EMB = process.argv.includes('--embedded')
+if (!EMB) for (const [n, p] of [['a', CA], ['b', CB]]) run('cosigner-' + n, 'node', ['services/settlement/src/cosignerMain.ts'], { PORT: String(p), CHAIN_ID: '46630', RPC_URL: rpc, COSIGNER_SECRET: secret('cs' + n), COSIGNER_NAME: n, COSIGNER_AUTH_TOKEN: token, DIRECTOR_URL: director, SIM_PATH: 'game/dist/sim.cjs' })
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hs-cash-'))
 run('game', 'node', ['game/server/index.mjs'], { PORT: String(GAME), CHAIN_ID: '46630', RPC_URL: rpc, OPERATOR_SECRET: secret('op'), OWNER_ADDRESS: OWNER,
-  COSIGNER_URLS: `http://127.0.0.1:${CA},http://127.0.0.1:${CB}`, COSIGNER_AUTH_TOKEN: token, DATA_DIR: tmp, POLL_INTERVAL_MS: '1000', PRIVY_APP_ID: 'test' })
+  ...(EMB ? { EMBEDDED_COSIGNERS: '2', COSIGNER_A_SECRET: secret('csa'), COSIGNER_B_SECRET: secret('csb') } : { COSIGNER_URLS: `http://127.0.0.1:${CA},http://127.0.0.1:${CB}` }),
+  COSIGNER_AUTH_TOKEN: token, DATA_DIR: tmp, POLL_INTERVAL_MS: '1000', PRIVY_APP_ID: 'test' })
 
 // 1) server deploys the escrow by itself
 let cfg

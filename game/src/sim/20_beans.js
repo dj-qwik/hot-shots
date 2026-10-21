@@ -1,7 +1,7 @@
 // ───────────────────────── beans ─────────────────────────
 function makeBean(i, human) {
   return {
-    i, human, name: human ? 'You' : BOT_NAMES[(i - 1) % BOT_NAMES.length], color: ROSTER[i][1], colorName: ROSTER[i][0],
+    i, human, name: human ? 'You' : BOT_NAMES[(((i - 1) % BOT_NAMES.length) + BOT_NAMES.length) % BOT_NAMES.length], color: ROSTER[i][1], colorName: ROSTER[i][0],
     speedMul: human ? 1 : rnd(0.95, 1.0), skill: human ? 1 : rnd(0.72, 0.95),
     x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, kx: 0, ky: 0, fx: 0, fy: 1,
     alive: true, out: 0, stun: 0, diveT: 0, proneT: 0, diveCd: 0, sq: 0, walk: 0, carry: null, hitCd: 0,
