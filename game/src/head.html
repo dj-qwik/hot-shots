@@ -4,6 +4,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Baloo+2:wght@500;600;700;800&display=swap">
 <style>
+[hidden] { display: none !important; }
 /* Layout: one-screen game cabinet. Top bar (wordmark, wallet) + stage (canvas with DOM HUD/menus layered
    on top). Single dark broadcast look by design: deep navy glass panels, coral primary, butter for "you". */
 :root {
@@ -94,6 +95,8 @@ kbd { font: 800 .74rem var(--body); background: linear-gradient(180deg, #2f3874,
 .seg { display: flex; gap: 6px; flex-wrap: wrap; }
 .seg button { font: 800 .95rem var(--body); color: var(--text); background: rgba(255,255,255,.05); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px 6px; cursor: pointer; min-width: 64px; transition: background .15s; }
 .seg button:hover { background: rgba(255,255,255,.1); }
+.field { font: 700 1.05rem var(--body); color: var(--text); background: rgba(255,255,255,.06); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; outline: none; width: 100%; box-sizing: border-box; }
+.field:focus { border-color: var(--cyan, #37D8E9); box-shadow: 0 0 0 3px rgba(55,216,233,.25); }
 .seg button.sel { background: linear-gradient(180deg, rgba(255,217,91,.25), rgba(255,217,91,.1)); border-color: var(--butter); color: var(--butter); }
 .seg button small { display: block; font-size: .62rem; letter-spacing: .1em; color: var(--muted); font-weight: 700; }
 .receipt { background: rgba(5,7,24,.55); border: 1px dashed rgba(160,175,255,.25); border-radius: 16px; padding: 12px 14px; display: grid; gap: 6px; font-variant-numeric: tabular-nums; }

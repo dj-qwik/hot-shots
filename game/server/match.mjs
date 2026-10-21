@@ -134,7 +134,7 @@ export class Match {
       while (this.state === 'play' && this.round.tick < due && n++ < T.MAX_CATCHUP) this.stepTick()
       return
     }
-    if (this.state === 'done' && now >= this.until) { if (this.champion) this.finish(); else this.nextRound(); return }
+    if (this.state === 'done' && now >= this.until) { if (this.champion != null) this.finish(); else this.nextRound(); return }
     if (this.state === 'champ' && now >= this.until) this.close('finished')
   }
   stepTick() {

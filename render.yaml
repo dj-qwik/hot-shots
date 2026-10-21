@@ -1,0 +1,18 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# Phase 1: the online game (free play). Wallet/escrow services are added here in phase 2.
+services:
+  - type: web
+    name: hot-shots-game
+    runtime: node
+    plan: 0.5c-512mb         # half a CPU; 'free' also works for testing, but free instances sleep when idle and have little CPU
+    region: oregon
+    rootDir: game
+    buildCommand: npm install --omit=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit  # every push to the deploy branch redeploys
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production

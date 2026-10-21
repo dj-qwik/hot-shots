@@ -9,3 +9,4 @@ node_modules
 contracts/lib/
 game/dist/
 *.png
+dist-web/

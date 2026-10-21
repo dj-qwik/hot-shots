@@ -5,6 +5,7 @@ import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import zlib from 'node:zlib'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer } from 'ws'
@@ -31,13 +32,22 @@ function serveStatic(req, res) {
   if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(WEB_DIR, 'index.html') // SPA fallback
   if (!fs.existsSync(file)) { res.writeHead(404); return res.end('client not built') }
   const ext = path.extname(file)
-  res.writeHead(200, {
+  const gz = /\bgzip\b/.test(req.headers['accept-encoding'] || '') && /\.(html|js|css|json|svg)$/.test(ext)
+  const headers = {
     'content-type': TYPES[ext] || 'application/octet-stream',
     'cache-control': ext === '.html' ? 'no-cache' : 'public, max-age=3600',
     'x-content-type-options': 'nosniff', 'referrer-policy': 'strict-origin-when-cross-origin',
-    'permissions-policy': 'camera=(), microphone=(), geolocation=()',
-  })
+    'permissions-policy': 'camera=(), microphone=(), geolocation=()', vary: 'accept-encoding',
+  }
+  if (gz) { headers['content-encoding'] = 'gzip'; res.writeHead(200, headers); return res.end(gzipped(file)) }
+  res.writeHead(200, headers)
   fs.createReadStream(file).pipe(res)
+}
+const gzCache = new Map() // file → { mtime, buf }: compress each asset once
+function gzipped(file) {
+  const m = fs.statSync(file).mtimeMs, c = gzCache.get(file)
+  if (c && c.m === m) return c.buf
+  const buf = zlib.gzipSync(fs.readFileSync(file), { level: 9 }); gzCache.set(file, { m, buf }); return buf
 }
 const server = http.createServer(serveStatic)
 

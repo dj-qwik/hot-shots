@@ -48,6 +48,7 @@ function createFollower({ createSim, fx, me = -1, onDesync = () => {} }) {
     pace(dtMs) {
       const b = F.buffered;
       if (F.end && F.next >= F.frames.length) return 0;
+      if (F.next === 0 && b < F.target && !F.end) return 0; // fill the cushion before playback starts
       if (b > F.target + 45) return b - F.target; // e.g. the tab was hidden: catch up at once
       const rate = b > F.target + 3 ? 1.1 : b < F.target - 1 ? 0.9 : 1;
       F.acc += (dtMs / (1000 / 60)) * rate;
@@ -56,7 +57,7 @@ function createFollower({ createSim, fx, me = -1, onDesync = () => {} }) {
         if (!F.end) { F.starve++; F.target = Math.min(14, F.target + 1); }
         F.acc = 0; n = b;
       } else if (F.target > 4 && (F.smooth += dtMs) > 8000) { F.smooth = 0; F.target--; }
-      return Math.min(n, 8);
+      return Math.min(n, 20);
     },
     /** reconnect / desync repair: rebuild the round and replay every frame so far at full speed */
     sync(msg) {

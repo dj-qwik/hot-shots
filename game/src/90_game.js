@@ -1,9 +1,12 @@
 // ───────────────────────── match state ─────────────────────────
 const game = {
-  screen: 'home', mode: 'cash', stake: parseEth('0.01'), size: 4, beans: [], wins: [], round: 0, history: [],
-  phase: 'idle', t: 0, phaseT: 0, speed: 1, winnerBean: null, deposited: false,
+  screen: 'home', mode: 'cash', stake: parseEth('0.01'), size: 4, beans: [], active: [], players: [], me: 0, wins: [], round: 0, history: [],
+  roundWinners: [], phase: 'idle', t: 0, phaseT: 0, speed: 1, winnerBean: null, deposited: false,
 };
-let arena = null;
+let arena = null, ROUND = null; // the current round (deterministic simulation instance); arena = ROUND.arena
+const meBean = () => game.beans.find((b) => b.i === game.me) || null;
+// A fresh, isolated simulation instance per round (the same code the server runs online).
+function bindRound(round) { ROUND = round; arena = round.arena; game.beans = round.beans; game.active = round.active; game.isFinal = round.isFinal; }
 
 // Rotation: never repeat any of the last 8 arenas, and never the same genre twice in a row.
 function pickArena() {
@@ -16,26 +19,29 @@ function pickArena() {
 }
 
 function startMatch() {
-  game.beans = Array.from({ length: game.size }, (_, i) => makeBean(i, i === 0));
+  // offline roster: you are seat 0, bots fill the rest with a spread of skill
+  game.me = 0;
+  game.players = Array.from({ length: game.size }, (_, i) => i === 0 ? { i, name: 'You', human: true }
+    : { i, name: BOT_NAMES[(i - 1) % BOT_NAMES.length], skill: rnd(0.72, 0.95), speedMul: rnd(0.95, 1) });
   game.wins = Array(game.size).fill(0); game.round = 0; game.history = []; game.roundWinners = [];
   nextRound();
 }
 // Rounds 1–3 are open to all. If they produced three different winners, round 4 is a final for those three only.
-function contenders() {
+function contenders() { // seat indices
   const w = game.roundWinners;
-  if (w.length >= 3 && new Set(w.slice(0, 3)).size === 3) return w.slice(0, 3).map((i) => game.beans[i]);
-  return game.beans;
+  if (w.length >= 3 && new Set(w.slice(0, 3)).size === 3) return w.slice(0, 3);
+  return game.players.map((p) => p.i);
 }
 function nextRound() {
   game.round++;
-  arena = pickArena(); game.history.push(arena.key);
-  game.beans.forEach((b) => { Object.assign(b, makeBean(b.i, b.human), { speedMul: b.speedMul, skill: b.skill, name: b.name }); });
+  const key = pickArena().key; game.history.push(key);
+  const active = contenders(), seed = (Math.random() * 4294967296) >>> 0;
+  bindRound(createSim({ fx: FX_ENV, seed }).createRound({ key, seed, players: game.players, active, isFinal: active.length !== game.players.length }));
+  beginIntro(INTRO_SECONDS);
+}
+function beginIntro(seconds) {
   document.body.classList.add('playing');
-  game.active = contenders();
-  game.isFinal = game.active.length !== game.beans.length;
-  // Spawn spots are assigned by array position, so shuffle the order every round: no seat gets a fixed edge.
-  arena.init([...game.active].sort(() => Math.random() - 0.5));
-  camReset(true); game.phase = 'intro'; game.phaseT = 0; game.t = 0; game.speed = 1; game.winnerBean = null;
+  camReset(true); game.phase = 'intro'; game.phaseT = INTRO_SECONDS - seconds; game.t = 0; game.speed = 1; game.winnerBean = null; game.acc = 0;
   showOverlay(introCard()); $('#hud').hidden = false; $('#touch').hidden = !isTouch; $('#ff').hidden = true;
   renderHud(true);
 }
@@ -91,7 +97,7 @@ function homeCard() {
     <div class="hero">
       <h1 class="mega" aria-label="Hot Shots"><span class="w1">HOT</span><span class="w2">SHOTS</span></h1>
       <p class="tagline">Thirty-second mini games. <em>Best 2 out of 3.</em> The champion takes 90% of the pot.</p>
-      <div class="row"><button class="btn primary big" id="goCash">Play for test ETH</button><button class="btn ghost big" id="goPractice">Practice</button></div>
+      <div class="row">${NET.enabled() ? '<button class="btn primary big" id="goOnline">Play online</button><button class="btn ghost big" id="goCash">Test-ETH demo</button>' : '<button class="btn primary big" id="goCash">Play for test ETH</button>'}<button class="btn ghost big" id="goPractice">Practice</button></div>
       <div class="panel">
         <div class="feats">
           <div class="feat">${icon('flag', '#37d8e9')}<b>20 arenas</b><span>Races, survival, steals and turf wars. Never the same twice in a row.</span></div>
@@ -146,7 +152,7 @@ const INTRO_SECONDS = 5;
 // Split an objective into short, scannable lines ("Red beams are low: JUMP." → one line each).
 function objectiveLines(text) { return text.split(/(?<=[.!])\s+/).map((x) => x.trim()).filter(Boolean); }
 function introCard() {
-  const watching = game.isFinal && !game.active.includes(game.beans[0]);
+  const watching = game.isFinal && !game.active.some((b) => b.i === game.me);
   return `<div class="card intro" style="--acc:${arenaAccent(arena)}">
     <div class="head"><div class="genre-ic">${genreIcon(arena)}</div><div style="display:grid;gap:4px;min-width:0">
       <span class="label">${game.isFinal ? 'Deciding final' : `Round ${game.round} of 3`} · ${esc(arena.genre)} · 30 s max</span>
@@ -168,21 +174,21 @@ function roundCard(w) {
     <img class="hero-img" src="${portrait(w.i, 'happy', 128)}" alt="">
     <h2 style="color:${w.color}">${w.human ? 'You win the round!' : `${esc(w.name)} wins the round`}</h2>
     ${standingsHtml(w)}
-    <div class="row" style="justify-content:center"><button class="btn primary big" id="nextRound">${contendersPreview() ? 'To the final' : 'Next arena'}</button></div>
-    <p>${game.wins[0] === 1 ? '<b style="color:var(--butter)">Match point for you.</b> ' : ''}${contendersPreview()}</p>
+    ${game.mode === 'online' ? `<p class="label" style="text-align:center">Next arena in a moment…</p>` : `<div class="row" style="justify-content:center"><button class="btn primary big" id="nextRound">${contendersPreview() ? 'To the final' : 'Next arena'}</button></div>`}
+    <p>${game.wins[game.me] === 1 ? '<b style="color:var(--butter)">Match point for you.</b> ' : ''}${contendersPreview()}</p>
   </div>`;
 }
 function contendersPreview() { const w = game.roundWinners; return w.length === 3 && new Set(w).size === 3 ? 'Three different winners — they play a deciding final.' : ''; }
 function championCard(w) {
   const n = game.size, { pot, house, champ } = splitPot(game.stake, n);
   const cash = game.mode === 'cash';
-  setTimeout(() => countUp('payCount', champ), 250);
+  if (cash) setTimeout(() => countUp('payCount', champ), 250);
   return `<div class="card result champ">
     <div class="ch-left">
       <span class="label">Match over · ${game.round} round${game.round === 1 ? "" : "s"}</span>
       <div class="row" style="justify-content:center;gap:0">${TROPHY}<img class="hero-img" src="${portrait(w.i, 'happy', 128)}" alt=""></div>
       <h1 style="font-size:clamp(1.8rem,5vw,2.6rem);color:${w.color}">${w.human ? 'Champion!' : `${esc(w.name)} is champion`}</h1>
-      ${cash ? `<div class="count"><span id="payCount">0</span> tETH</div><span class="label">paid to the champion</span>` : '<p>Practice match — no stakes involved.</p>'}
+      ${cash ? `<div class="count"><span id="payCount">0</span> tETH</div><span class="label">paid to the champion</span>` : game.mode === 'online' ? '<p>Free online match — no stakes involved.</p>' : '<p>Practice match — no stakes involved.</p>'}
     </div>
     <div class="ch-right">
       ${cash ? `<div class="receipt">
@@ -209,6 +215,7 @@ function countUp(id, wei) {
 
 $('#ov').addEventListener('click', (e) => {
   const t = e.target.closest('button'); if (!t) return;
+  if (game.mode === 'online' && ['again', 'nextRound', 'home'].includes(t.id)) return; // handled by NET
   if (t.id === 'goCash') { game.mode = 'cash'; game.deposited = false; game.screen = 'lobby'; showOverlay(lobbyCard()); }
   else if (t.id === 'goPractice') { game.mode = 'practice'; game.size = 4; game.screen = 'match'; startMatch(); }
   else if (t.dataset.tier) { game.stake = parseEth(t.dataset.tier); showOverlay(lobbyCard()); }
@@ -221,7 +228,7 @@ $('#ov').addEventListener('click', (e) => {
   }
   else if (t.id === 'leave') { clearTimeout(game.fillTimer); setWallet(wallet + game.stake); game.deposited = false; showOverlay(lobbyCard()); }
   else if (t.id === 'nextRound') { nextRound(); }
-  else if (t.id === 'ready') { startCountdown(); }
+  else if (t.id === 'ready') { if (game.mode === 'online') NET.ready(); else startCountdown(); }
   else if (t.id === 'again') { if (game.mode === 'cash') { game.deposited = false; game.screen = 'lobby'; $('#hud').hidden = true; $('#touch').hidden = true; arena = null; showOverlay(lobbyCard()); } else startMatch(); }
 });
 function fillLobby() {
@@ -282,12 +289,16 @@ function frameInner(now) {
     applyScreen(); drawAmbient(amb); stageLighting(theme, tt);
     return;
   }
-  const steps = game.phase === 'play' ? game.speed : 1;
-  for (let s = 0; s < steps; s++) tick(dt);
+  if (game.mode === 'online') NET.frame(dt);
+  else {
+    // fixed 60 Hz simulation steps (the arenas are tuned at exactly 1/60 s), ×3 when fast-forwarding
+    game.acc = Math.min(0.25, (game.acc || 0) + dt * (game.phase === 'play' ? game.speed : 1));
+    while (game.acc >= 1 / 60) { tick(1 / 60); game.acc -= 1 / 60; }
+  }
   CAM.scrollY = arena.cam ? (arena.cam() || 0) : 0; // non-scrolling arenas must not inherit a race's scroll
   applyWorld();
   stageFloor(theme);
-  arena.draw(game.t);
+  if (game.mode === 'online') NET.withPrediction(() => arena.draw(game.t)); else arena.draw(game.t);
   applyWorld(); drawFx();
   applyScreen();
   drawAmbient(amb);
@@ -299,10 +310,11 @@ function frameInner(now) {
   }
   if (game.phase === 'play' && game.t < 0.8) { const k = game.t / 0.8; bigCenterText('GO!', '#FFD95B', 1 + k * 0.7, 1 - k); }
   drawAnnouncer();
-  const me = game.beans[0];
+  const me = meBean();
   const banner = (txt) => { ctx.fillStyle = 'rgba(10,12,34,.8)'; roundRect(W / 2 - 230, H - 112, 460, 34, 17); ctx.fill(); ctx.fillStyle = '#fff'; ctx.font = '17px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(txt, W / 2, H - 95); };
-  if (game.phase === 'play' && !game.active.includes(me)) banner('DECIDING FINAL · SPECTATING');
-  else if (game.phase === 'play' && !me.alive && me.out > 0.8) banner('YOU ARE OUT · SPECTATING');
+  if (game.phase === 'play' && me && !game.active.includes(me)) banner('DECIDING FINAL · SPECTATING');
+  else if (game.phase === 'play' && me && !me.alive && me.out > 0.8) banner('YOU ARE OUT · SPECTATING');
+  if (game.mode === 'online') NET.drawStatus();
   renderHud(false);
 }
 let frameErrs = 0;
@@ -323,39 +335,40 @@ function tick(dt) {
     const left = Math.max(0, INTRO_SECONDS - game.phaseT);
     const el = document.getElementById('introLeft'); if (el) el.textContent = Math.ceil(left);
     const bar = document.getElementById('introFill'); if (bar) bar.style.width = (left / INTRO_SECONDS) * 100 + '%';
-    if (left <= 0) startCountdown();
+    if (left <= 0 && game.mode !== 'online') startCountdown();
     return;
   }
   if (game.phase === 'countdown') {
     const c = Math.ceil(3 - game.phaseT); if (c !== lastCount) { lastCount = c; SFX.count(c); }
-    if (game.phaseT > 3) { game.phase = 'play'; game.phaseT = 0; game.t = 0; snapScores(); }
+    if (game.phaseT > 3 && game.mode !== 'online') { game.phase = 'play'; game.phaseT = 0; game.t = 0; snapScores(); }
     return;
   }
   if (game.phase !== 'play') {
     // after the result: everything coasts in slow motion while the camera pushes in on the winner
     const slow = game.phaseT < 1.6 ? 0.25 : 0.12;
-    for (const b of game.active) stepBean(b, { x: 0, y: 0, jump: false, dive: false }, dt * slow, arena.maxSpeed, arena.diveSpeed, arena.mods?.(b));
-    arena.update(dt * slow, game.t);
+    ROUND.coast(dt * slow);
     if (game.phaseT > 1.6 && CAM.tz !== 1) camReset();
     return;
   }
-  const prevT = game.t;
-  game.t += dt;
+  const me = meBean(), inputs = {};
+  if (me && game.active.includes(me)) inputs[me.i] = SIM0.packInput(humanInput());
+  stepRound(() => ROUND.step(inputs));
+}
+// One simulation tick plus the presentation around it (shared by practice and online play).
+function stepRound(step) {
+  const prevT = ROUND.t, aliveBefore = game.active.map((b) => b.alive);
+  step();
+  game.t = ROUND.t;
   if (prevT < arena.timeout - 10 && game.t >= arena.timeout - 10) announce('10 SECONDS!', '#FF557D');
-  for (const b of game.active) stepBean(b, b.human ? humanInput() : arena.botInput(b, game.t), dt, arena.maxSpeed, arena.diveSpeed, arena.mods?.(b));
-  collide(game.active);
-  const aliveBefore = game.active.map((b) => b.alive);
-  arena.update(dt, game.t);
   game.active.forEach((b, k) => { if (aliveBefore[k] && !b.alive) fxOut(b); });
   const aliveNow = game.active.filter((b) => b.alive).length, aliveWas = aliveBefore.filter(Boolean).length;
   if (aliveNow < aliveWas && game.active.length > 2) {
     if (aliveNow === 2) announce('FINAL TWO!', '#FFD95B'); else if (aliveNow === 3 && game.active.length > 3) announce('3 LEFT!', '#37D8E9');
   }
   checkScores();
-  const me = game.beans[0];
-  $('#ff').hidden = game.active.includes(me) && me.alive;
-  const w = arena.winner(game.t, game.t >= arena.timeout);
-  if (w) endRound(w);
+  const me = meBean();
+  $('#ff').hidden = game.mode === 'online' || (me && game.active.includes(me) && me.alive);
+  if (ROUND.winner && game.mode !== 'online') endRound(ROUND.winner);
 }
 // Generic score pop-ups: watch each arena's progress fields and celebrate when they tick up.
 function scoreKey(b) {
@@ -374,12 +387,13 @@ function checkScores() {
 }
 function endRound(w) {
   game.phase = 'done'; game.phaseT = 0; game.speed = 1; $('#ff').hidden = true; $('#ff').textContent = 'Fast-forward ×3';
-  game.wins[w.i]++; game.roundWinners.push(w.i);
+  if (game.mode !== 'online') { game.wins[w.i]++; game.roundWinners.push(w.i); } // online: the server's tally arrives with 'end'
   fxWin(w); if (w.human) shake(6);
   camFocus(w.x, w.y, 1.35);
   announce(w.human ? 'YOU WIN THE ROUND!' : `${w.name.toUpperCase()} WINS!`, w.color, game.wins[w.i] >= WINS_TO_CHAMPION ? 'CHAMPION!' : game.wins[w.i] === 1 ? 'Match point' : '');
   renderHud(true);
   if (w.human) SFX.win(); else { SFX.lose(); crowdRoar(0.8); }
+  if (game.mode === 'online') return; // the server drives what comes next
   if (game.wins[w.i] >= WINS_TO_CHAMPION) {
     if (game.mode === 'cash' && w.human) setWallet(wallet + splitPot(game.stake, game.size).champ);
     setTimeout(() => showOverlay(championCard(w)), 1900);
@@ -404,14 +418,3 @@ function drawAttract(t) {
   drawAll(attract);
 }
 
-// ───────────────────────── boot ─────────────────────────
-buildMaterials();
-const SPEAKER = (on) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="#fff"/>${on ? '<path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/>' : '<path d="M16 9l6 6M22 9l-6 6" stroke="#ff557d" stroke-width="2.2" stroke-linecap="round"/>'}</svg>`;
-function renderMute() { const m = $('#mute'); m.innerHTML = SPEAKER(!AUDIO.muted); m.setAttribute('aria-label', AUDIO.muted ? 'Sound off' : 'Sound on'); }
-$('#mute').addEventListener('click', () => { audioInit(); setMuted(!AUDIO.muted); renderMute(); });
-renderMute();
-document.addEventListener('click', (e) => { if (e.target.closest('.btn, .seg button')) SFX.ui(); });
-setWallet(wallet);
-resize();
-goHome();
-requestAnimationFrame(frame);

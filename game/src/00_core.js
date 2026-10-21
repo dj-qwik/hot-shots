@@ -119,7 +119,11 @@ addEventListener('resize', resize);
 // ───────────────────────── input ─────────────────────────
 const keys = new Set();
 const touchVec = { x: 0, y: 0 }; let touchJump = false, touchDive = false;
-function startCountdown() { if (game.phase !== 'intro') return; game.phase = 'countdown'; game.phaseT = 0; showOverlay(''); }
+function startCountdown() {
+  if (game.phase !== 'intro') return;
+  if (game.mode === 'online') return NET.ready(); // online: the server starts the countdown once everyone is ready
+  game.phase = 'countdown'; game.phaseT = 0; showOverlay('');
+}
 addEventListener('keydown', (e) => {
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat && game.phase === 'intro') { e.preventDefault(); startCountdown(); return; }

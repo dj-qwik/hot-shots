@@ -88,9 +88,9 @@ upper one, per-level depth sorting, telegraphed drops, theme, screen-space label
 ## Workflow
 ```bash
 cd game
-python3 build.py --out dist/<you> --only <your,arena,keys>          # bundle only your arenas
-GAME_JS=dist/<you>/game.js node tools/accept.mjs <key>               # full suite for one arena (~0.5–2 min)
-GAME_JS=dist/<you>/game.js node tools/accept.mjs <key> --quick       # faster, noisier
+node build.mjs --out dist/<you> --only <your,arena,keys>          # bundle only your arenas
+SIM_JS=dist/<you>/sim.cjs node tools/accept.mjs <key>               # full suite for one arena (~0.5–2 min)
+SIM_JS=dist/<you>/sim.cjs node tools/accept.mjs <key> --quick       # faster, noisier
 GAME_HTML=dist/<you>/hotshots-arena.html node tools/shot.mjs out.png <key> 6000   # screenshot after 6 s
 ```
 - Look at your screenshots (Read the PNG) at several moments (e.g. 2 s, 10 s, 20 s). Iterate until it

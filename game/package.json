@@ -1,0 +1,18 @@
+{
+  "name": "@hotshots/game",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Hot Shots game: deterministic simulation, browser client, and the authoritative multiplayer server.",
+  "engines": { "node": ">=22.12" },
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node server/index.mjs",
+    "test": "node tools/determinism.mjs 2 && node tools/nettest.mjs 1 4 --no-reconnect",
+    "test:full": "node tools/determinism.mjs 5 && node tools/nettest.mjs 2 8 --jitter 80",
+    "accept": "node tools/accept.mjs"
+  },
+  "dependencies": {
+    "ws": "8.18.3"
+  }
+}
