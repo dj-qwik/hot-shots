@@ -38,7 +38,8 @@ function serveStatic(req, res) {
   const gz = /\bgzip\b/.test(req.headers['accept-encoding'] || '') && /\.(html|js|css|json|svg)$/.test(ext)
   const headers = {
     'content-type': TYPES[ext] || 'application/octet-stream',
-    'cache-control': ext === '.html' ? 'no-cache' : 'public, max-age=3600',
+    // files with a content hash in their name can be cached for a long time; everything else must revalidate
+    'cache-control': /-[A-Za-z0-9_-]{8}\.(js|css)$/.test(file) ? 'public, max-age=31536000, immutable' : 'no-cache',
     'x-content-type-options': 'nosniff', 'referrer-policy': 'strict-origin-when-cross-origin',
     'permissions-policy': 'camera=(), microphone=(), geolocation=()', vary: 'accept-encoding',
   }
