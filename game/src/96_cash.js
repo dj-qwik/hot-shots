@@ -67,6 +67,9 @@ const CASH = (() => {
     if (!W()) {
       amt.innerHTML = `<small>${net}</small><b>${walletError() ? 'Wallet error' : 'Wallet loading…'}</b>`;
       btn.textContent = 'Details'; btn.dataset.act = 'menu';
+    } else if (C.w && C.w.authenticated && !C.w.address) {
+      amt.innerHTML = `<small>${net}</small><b>Setting up wallet…</b>`;
+      btn.textContent = 'Sign in'; btn.dataset.act = 'login';
     } else if (!C.w || !C.w.authenticated || !C.w.address) {
       amt.innerHTML = `<small>${net}</small><b>Not signed in</b>`;
       btn.textContent = 'Sign in'; btn.dataset.act = 'login';
@@ -92,7 +95,7 @@ const CASH = (() => {
     if (!W()) return walletError() ? `<div class="notice"><b>The wallet couldn't start</b><span>${esc(walletError())}</span><span>Reload the page. If it keeps happening, please send a screenshot of this message.</span></div>` : `<p class="label">Loading wallet…</p>`;
     if (!C.w || !C.w.ready) return `<p class="label">Loading wallet…</p>`;
     if (!C.w.authenticated) return `<button class="btn primary big" id="cashLogin">Sign in to play</button><p class="fine" style="padding:0">Google or email. We create a game wallet for you. No MetaMask, no browser extension, nothing to install.</p>`;
-    if (!C.w.address) return `<p class="label">Setting up your game wallet…</p>`;
+    if (!C.w.address) return `<p class="label">Setting up your game wallet…</p><button class="btn ghost small" id="cashLogin" style="justify-self:start">Stuck? Sign in again</button>`;
     const stake = parseEth(C.stake), low = C.bal != null && C.bal < stake + GAS_BUFFER;
     const fund = `<div class="notice"><b>Add ${unit()} to play</b><span>You need ${C.stake} ${unit()} for the stake plus a little for network fees.</span><button class="btn primary small" id="cashWallet" style="justify-self:start">Add ${unit()}</button></div>`;
     return `${low ? fund : ''}

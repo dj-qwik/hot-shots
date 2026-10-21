@@ -12,7 +12,7 @@
  */
 import { createRoot } from 'react-dom/client'
 import { useEffect, useRef } from 'react'
-import { PrivyProvider, usePrivy, useWallets, type ConnectedWallet } from '@privy-io/react-auth'
+import { PrivyProvider, useCreateWallet, usePrivy, useWallets, type ConnectedWallet } from '@privy-io/react-auth'
 import { createPublicClient, createWalletClient, custom, http, isAddress, parseEther, type Address, type Chain, type Hex, type PublicClient } from 'viem'
 import { escrowAbi, getChain, type SupportedChainId } from '@hotshots/shared'
 
@@ -40,7 +40,8 @@ const fire = (): void => { window.dispatchEvent(new Event('hswallet')) }
 
 function Bridge({ cfg, chain, pub }: { cfg: CashConfig; chain: Chain; pub: PublicClient }) {
   const privy = usePrivy()
-  const { wallets } = useWallets()
+  const { wallets, ready: walletsReady } = useWallets()
+  const { createWallet } = useCreateWallet()
   // Only the Privy game wallet: an external wallet (MetaMask…) would bring back its connect/sign prompts.
   const wallet: ConnectedWallet | null = wallets.find((w) => w.walletClientType === 'privy') ?? null
   const cur = useRef({ privy, wallet })
@@ -63,7 +64,8 @@ function Bridge({ cfg, chain, pub }: { cfg: CashConfig; chain: Chain; pub: Publi
     }
     const api: HSWalletApi = {
       state: () => ({ ready: cur.current.privy.ready, authenticated: cur.current.privy.authenticated, address: (cur.current.wallet?.address as Address) ?? null, embedded: cur.current.wallet?.walletClientType === 'privy', chainId: cfg.chainId }),
-      login: () => cur.current.privy.login(),
+      // already signed in without a game wallet (old session): start over so the sign-in window opens
+      login: () => { const p = cur.current.privy; if (p.authenticated && !cur.current.wallet) void p.logout().then(() => p.login()); else p.login() },
       logout: () => cur.current.privy.logout(),
       balance: async () => { const a = cur.current.wallet?.address as Address | undefined; return a ? (await pub.getBalance({ address: a })).toString() : null },
       sign: async (message) => { const { w, wc } = await client(); return wc.signMessage({ account: w.address as Address, message }) },
@@ -101,6 +103,13 @@ function Bridge({ cfg, chain, pub }: { cfg: CashConfig; chain: Chain; pub: Publi
     fire()
   }, [cfg, chain, pub])
   useEffect(() => { fire() }, [privy.ready, privy.authenticated, wallet?.address, wallet?.chainId])
+  // Signed in from before (e.g. an old MetaMask login) but no game wallet yet: make one now.
+  const creating = useRef(false)
+  useEffect(() => {
+    if (!privy.ready || !privy.authenticated || !walletsReady || wallet || creating.current) return
+    creating.current = true
+    createWallet().catch((e: unknown) => console.warn('game wallet create', e)).finally(() => { creating.current = false })
+  }, [privy.ready, privy.authenticated, walletsReady, wallet])
   return null
 }
 
