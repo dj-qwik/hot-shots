@@ -60,6 +60,33 @@ function beginIntro(seconds) {
 // Redrawing a card that is already showing (balance tick, a player joining, a server status update) must
 // not replay its pop-in animation: that replay is the "flicker". Identical HTML is skipped outright; an
 // update to the same card (same screen, same title) swaps in place with animations held still.
+// Power-up pickups and held-power badges, depth-sorted with the beans (drawAll picks up SPRITES).
+function queuePowerSprites(R, t) {
+  if (!R || !R.power) return;
+  for (const it of R.power.items) SPRITES.push({ y: it.y, draw: () => {
+    const c = POWERS[it.kind].color, fade = it.life < 2 && Math.sin(t * 18) > 0 ? 0.4 : 1;
+    contactShadow(it.x, it.y + 4, 16, 8, 0.4);
+    billboard(it.x, it.y, 20 + Math.sin(t * 3 + it.ph) * 5, () => {
+      ctx.globalAlpha = fade;
+      glow(c, 18, () => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(0, 0, 13, 0, Math.PI * 2); ctx.fill(); });
+      ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.beginPath(); ctx.arc(-4, -4, 4, 0, Math.PI * 2); ctx.fill();
+      powerGlyph(it.kind, '#14152a'); ctx.globalAlpha = 1;
+    });
+  } });
+  for (const b of R.beans) if (b.alive !== false && (b.pow || b.zoomT > 0)) SPRITES.push({ y: b.y + 0.02, draw: () => {
+    const k = b.pow || 'zoom', c = POWERS[k].color;
+    if (k === 'bubble') { billboard(b.x, b.y, b.z + 18, () => { ctx.strokeStyle = 'rgba(126,226,184,.75)'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(0, 0, 26, 0, Math.PI * 2); ctx.stroke(); ctx.fillStyle = 'rgba(126,226,184,.12)'; ctx.fill(); }); }
+    if (k === 'zoom') { for (let j = 0; j < 3; j++) { const a = t * 20 + j * 2.1; ctx.fillStyle = 'rgba(55,216,233,.5)'; ctx.fillRect(b.x - b.vx * 0.05 * (j + 1) - 2, b.y - 10 - b.vy * 0.05 * (j + 1) + Math.sin(a) * 3, 4, 4); } }
+    billboard(b.x, b.y, b.z + 70, () => { ctx.fillStyle = 'rgba(10,13,36,.8)'; ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.stroke(); ctx.save(); ctx.scale(0.75, 0.75); powerGlyph(k, c); ctx.restore(); });
+  } });
+}
+function powerGlyph(kind, col) {
+  ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.lineJoin = 'round'; ctx.beginPath();
+  if (kind === 'zoom') { ctx.moveTo(2, -9); ctx.lineTo(-5, 1); ctx.lineTo(0, 1); ctx.lineTo(-2, 9); ctx.lineTo(5, -2); ctx.lineTo(0, -2); ctx.closePath(); ctx.fill(); }
+  else if (kind === 'bubble') { ctx.moveTo(0, -8); ctx.lineTo(7, -5); ctx.lineTo(6, 3); ctx.lineTo(0, 8); ctx.lineTo(-6, 3); ctx.lineTo(-7, -5); ctx.closePath(); ctx.fill(); }
+  else if (kind === 'spring') { ctx.moveTo(-6, 6); for (let k = 0; k < 4; k++) { ctx.lineTo(6, 4 - k * 4); ctx.lineTo(-6, 2 - k * 4); } ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, -12); ctx.lineTo(5, -7); ctx.lineTo(-5, -7); ctx.closePath(); ctx.fill(); }
+  else { ctx.arc(0, 0, 6, 0, Math.PI * 2); ctx.fill(); for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3; ctx.moveTo(Math.cos(a) * 7, Math.sin(a) * 7); ctx.lineTo(Math.cos(a) * 11, Math.sin(a) * 11); } ctx.stroke(); }
+}
 let OV_HTML = '', OV_KEY = '';
 function showOverlay(html) {
   const ov = $('#ov'); html = html || '';
@@ -339,6 +366,7 @@ function frameInner(now) {
   CAM.scrollY = arena.cam ? (arena.cam() || 0) : 0; // non-scrolling arenas must not inherit a race's scroll
   applyWorld();
   stageFloor(theme);
+  queuePowerSprites(ROUND, game.t);
   if (game.mode === 'online') NET.withPrediction(() => arena.draw(game.t)); else arena.draw(game.t);
   applyWorld(); drawFx();
   applyScreen();

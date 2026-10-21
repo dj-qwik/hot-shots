@@ -6,7 +6,7 @@ function makeBean(i, human) {
     x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, kx: 0, ky: 0, fx: 0, fy: 1,
     alive: true, out: 0, stun: 0, diveT: 0, proneT: 0, diveCd: 0, sq: 0, walk: 0, carry: null, hitCd: 0,
     layer: 0, zoff: 0, broken: 0, bank: 0, cur: null, stand: 0, fatigue: 0, diveLatch: false, stepT: 0, blink: 1 + VRAND() * 3, hitBy: null, happyT: 0, cheerT: 0, scaredT: 0, jumpBuf: 0,
-    next: 0, prog: 0, lastAng: 0, recipe: [], got: [], done: false, cp: null, cap: 0, painted: 0, stars: 0, base: null, stealCd: 0, lane: null, seen: -1, react: 0, wrong: false, boostCd: 0, padCd: 0, think: 0, tx: 0, ty: 0, jumpLatch: false, plan: null, memo: null, outAt: 0, zapped: false,
+    next: 0, prog: 0, lastAng: 0, recipe: [], got: [], done: false, cp: null, cap: 0, painted: 0, stars: 0, base: null, stealCd: 0, lane: null, seen: -1, react: 0, wrong: false, boostCd: 0, padCd: 0, think: 0, tx: 0, ty: 0, jumpLatch: false, plan: null, memo: null, outAt: 0, zapped: false, pow: null, zoomT: 0, mega: 0,
   };
 }
 const R = 13; // bean radius
@@ -14,6 +14,9 @@ const R = 13; // bean radius
 function stepBean(b, inp, dt, maxSpeed, diveSpeed = 430, mods = null) {
   const slow = mods?.slow ?? 1, traction = mods?.traction ?? 1;
   if (!b.alive) { b.out += dt; return; }
+  // touch: was on the ground at some point this tick. A bunny-hopper who re-jumps the instant they land is
+  // airborne again by the time the arena looks, so ground hazards must check `b.z <= 0.5 || b.touch`.
+  b.touch = b.z <= 0.01 ? 1 : 0;
   if (b.stun > 0) { b.stun -= dt; inp = { x: 0, y: 0, jump: false, dive: false }; }
   b.diveCd -= dt; b.proneT -= dt; b.hitCd -= dt; b.padCd -= dt;
   b.fatigue = Math.max(0, b.fatigue - dt / DIVE.recover);
@@ -25,6 +28,7 @@ function stepBean(b, inp, dt, maxSpeed, diveSpeed = 430, mods = null) {
     const sp = diveSpeed * (1 - 0.17 * f);
     b.diveT = DIVE.time; b.proneT = DIVE.time + DIVE.getUp + 0.3 * f; b.diveCd = DIVE.cd + 0.25 * f;
     b.vx = d.x * sp; b.vy = d.y * sp; b.fx = d.x; b.fy = d.y; b.fatigue += 1;
+    if (b.pow === 'shove') { b.pow = null; b.mega = 1; }
     fxDive(b); if (b.human) SFX.dive();
   }
   b.diveLatch = !!inp.dive;
@@ -32,18 +36,18 @@ function stepBean(b, inp, dt, maxSpeed, diveSpeed = 430, mods = null) {
   // jump buffer: a press up to 0.12 s before landing still jumps on touchdown
   if (inp.jump && !b.jumpLatch) b.jumpBuf = 0.12;
   b.jumpBuf -= dt; b.happyT -= dt; b.scaredT -= dt;
-  if (b.jumpBuf > 0 && b.z <= 0.01 && b.proneT <= 0) { b.jumpBuf = 0; b.vz = 430; b.sq = -0.18; if (b.human) SFX.jump(); }
+  if (b.jumpBuf > 0 && b.z <= 0.01 && b.proneT <= 0) { b.jumpBuf = 0; b.vz = b.pow === 'spring' ? SPRING_VZ : 430; if (b.pow === 'spring') { b.pow = null; fxDive(b); } b.sq = -0.18; if (b.human) SFX.jump(); }
   b.jumpLatch = !!inp.jump;
-  if (b.diveT > 0) b.diveT -= dt;
+  if (b.diveT > 0) { b.diveT -= dt; if (b.diveT <= 0) b.mega = 0; }
   else {
-    const ms = maxSpeed * slow * b.speedMul * (b.carry ? 0.75 : 1) * (b.proneT > 0 ? 0 : 1);
+    const ms = maxSpeed * slow * b.speedMul * (b.zoomT > 0 ? ZOOM_MUL : 1) * (b.carry ? 0.75 : 1) * (b.proneT > 0 ? 0 : 1);
     const k = Math.min(1, dt * (b.z > 0 ? 3.2 : (b.proneT > 0 ? 7 : 10) * traction));
     b.vx += (inp.x * ms - b.vx) * k; b.vy += (inp.y * ms - b.vy) * k;
   }
   b.x += (b.vx + b.kx) * dt; b.y += (b.vy + b.ky) * dt;
   const decay = Math.exp(-4.5 * dt); b.kx *= decay; b.ky *= decay;
   b.vz -= 1300 * dt; b.z += b.vz * dt;
-  if (b.z < 0) { if (b.vz < -250) { b.sq = 0.22; fxLand(b); } b.z = 0; b.vz = 0; }
+  if (b.z < 0) { if (b.vz < -250) { b.sq = 0.22; fxLand(b); } b.z = 0; b.vz = 0; b.touch = 1; }
   b.sq *= Math.exp(-10 * dt);
   const sp = hyp(b.vx, b.vy);
   if (sp > 20 && b.proneT <= 0) { b.fx = b.vx / sp; b.fy = b.vy / sp; b.walk += sp * dt * 0.07; }
@@ -62,8 +66,10 @@ function collide(beans) {
       p.x -= n.x * push; p.y -= n.y * push; q.x += n.x * push; q.y += n.y * push;
       const tackle = (att, vic, dir) => {
         if (att.diveT > 0 && vic.hitCd <= 0) {
-          const f = arena?.tackle ?? 380;
-          vic.kx += dir.x * f; vic.ky += dir.y * f; vic.stun = 0.6; vic.hitCd = 0.6; if (att.human || vic.human) SFX.tackle(); else tone(160, 0.1, 'sine', 0.05, 80);
+          if (shielded(vic)) { att.diveT = 0; att.mega = 0; att.vx *= 0.2; att.vy *= 0.2; return; } // the bubble soaks it
+          const mega = att.mega ? SHOVE_MUL : 1, f = (arena?.tackle ?? 380) * mega; att.mega = 0;
+          vic.kx += dir.x * f; vic.ky += dir.y * f; vic.stun = mega > 1 ? 1 : 0.6; vic.hitCd = 0.6;
+          if (mega > 1) { ring(vic.x, vic.y, POWERS.shove.color, 10, 80, 0.4, 6); if (att.human || vic.human) shake(5); } if (att.human || vic.human) SFX.tackle(); else tone(160, 0.1, 'sine', 0.05, 80);
           att.diveT = 0; att.vx *= 0.2; att.vy *= 0.2; // the tackler stops dead on impact
           fxTackle(att, vic);
           if (arena?.onTackle) arena.onTackle(vic, att); else if (vic.carry) arena?.drop?.(vic);

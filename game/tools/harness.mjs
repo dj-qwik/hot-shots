@@ -18,26 +18,29 @@ export function loadGame(file = process.env.SIM_JS || path.join(here, '..', 'dis
  * Bean 0 is the "player" seat (human flag, full speed). Spawn order is shuffled like the real game.
  */
 export function runRound(G, key, n, controllers = {}, opts = {}) {
-  const A = G.ARENAS[key]
-  const beans = Array.from({ length: n }, (_, i) => { const b = G.makeBean(i, i === 0 && !opts.allBots); if (opts.botSkill) { b.skill = opts.botSkill; b.speedMul = opts.botSpeed ?? b.speedMul } return b })
-  if (!opts.allBots) { beans[0].skill = opts.playerSkill ?? 0.8; beans[0].speedMul = 1 }
-  G.setArena(A)
-  A.init([...beans].sort(() => Math.random() - 0.5))
-  const dt = 1 / 60
-  let t = 0, w = null, frame = 0
-  while (!w && t < 45) {
-    t += dt; frame++
-    for (const b of beans) {
+  // Plays the round exactly like the real game (createRound: bot lapses, shared power-ups, the arena's own
+  // bots on their own RNG stream). Controlled seats get the arena's bot input as a starting point.
+  const r32 = () => (Math.random() * 4294967296) >>> 0
+  const sim = G.createSim({ seed: r32() })
+  const player = (i) => i === 0 && !opts.allBots
+  const players = Array.from({ length: n }, (_, i) => ({
+    i, human: player(i),
+    skill: player(i) ? (opts.playerSkill ?? 0.8) : (opts.botSkill ?? 0.55 + Math.random() * 0.27),
+    speedMul: player(i) ? 1 : (opts.botSpeed ?? 0.9 + Math.random() * 0.07),
+  }))
+  const R = sim.createRound({ key, seed: r32(), players, active: players.map((p) => p.i), botSalt: String(r32()) }, {})
+  let w = null, frame = 0
+  while (!w && R.t < 45) {
+    frame++
+    const inputs = {}
+    for (const [i, c] of Object.entries(controllers)) {
+      const b = R.beans[+i]; if (!b || typeof c !== 'function') continue
       const hu = b.human; b.human = false
-      let inp = A.botInput(b, t)
+      const base = R.arena.botInput(b, R.t + 1 / 60) || {}
       b.human = hu
-      const c = controllers[b.i]
-      if (c) inp = c(b, t, A, beans, inp, frame)
-      G.stepBean(b, inp, dt, A.maxSpeed, A.diveSpeed, A.mods?.(b))
+      inputs[i] = sim.packInput(c(b, R.t + 1 / 60, R.arena, R.beans, base, frame) || {})
     }
-    G.collide(beans)
-    A.update(dt, t)
-    w = A.winner(t, t >= A.timeout)
+    w = R.step(inputs)
   }
-  return { winner: w, t, beans }
+  return { winner: w, t: R.t, beans: R.beans, round: R }
 }

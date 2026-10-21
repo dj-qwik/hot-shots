@@ -41,9 +41,10 @@ function createRound(cfg, rng = {}) {
   const byI = new Map(beans.map((b) => [b.i, b]));
   const active = cfg.active.map((i) => byI.get(i));
   A.init(shuffleWith(RNG, active)); // spawn spots are handed out by array position
+  const P = createPower(A); // shared power-ups (only if the arena opts in)
   let t = 0, tick = 0, winner = null, coasting = false;
   return {
-    arena: A, beans, active, isFinal: !!cfg.isFinal, key: cfg.key,
+    arena: A, power: P, beans, active, isFinal: !!cfg.isFinal, key: cfg.key,
     get t() { return t; }, get tick() { return tick; }, get winner() { return winner; },
     /** inputs: { [seat]: packedInt }. Missing seats are played by the arena's bot (own RNG stream) and
      *  written back into `inputs`, so the server can broadcast exactly what it applied. */
@@ -59,7 +60,7 @@ function createRound(cfg, rng = {}) {
             // (no new jumps or dives) for a moment. Less skilled bots lapse more often.
             if (b.lapse > 0) { b.lapse -= DT; p = (b.lastP ?? IDLE_INPUT) & 0xffff; }
             else {
-              p = packInput(A.botInput(b, t) || {});
+              p = packInput(P.steer(b, A.botInput(b, t) || {}));
               if (RNG() < (1.15 - b.skill) * 0.009) b.lapse = 0.2 + RNG() * 0.3;
             }
             b.lastP = p;
@@ -70,6 +71,7 @@ function createRound(cfg, rng = {}) {
       }
       collide(active);
       A.update(DT, t);
+      P.update(DT, t, active);
       const w = A.winner(t, t >= A.timeout);
       if (w) winner = w;
       return winner;
@@ -83,7 +85,8 @@ function createRound(cfg, rng = {}) {
     /** Exact fingerprint of the physical state (positions, velocities, who's alive, time). */
     hash() {
       const n = [t];
-      for (const b of active) n.push(b.x, b.y, b.z, b.vx, b.vy, b.kx, b.ky, b.alive ? 1 : 0, b.stun, b.proneT);
+      for (const b of active) n.push(b.x, b.y, b.z, b.vx, b.vy, b.kx, b.ky, b.alive ? 1 : 0, b.stun, b.proneT, b.zoomT > 0 ? b.zoomT : 0, b.pow ? b.pow.length : 0);
+      n.push(P.items.length);
       return hashNums(n);
     },
   };

@@ -31,7 +31,7 @@ const detTransform = (js) => js.replaceAll('Math.random()', 'RNG()').replace(/\b
 
 const det = rd('sim', '00_det.js'), base = rd('sim', '01_base.js'), follow = rd('sim', '99_follow.js')
 const body = [
-  ...['01_base.js', '20_beans.js', '30_kit.js'].map((f) => `// ═════ sim/${f} ═════\n` + detTransform(rd('sim', f))),
+  ...['01_base.js', '20_beans.js', '30_kit.js', '40_power.js'].map((f) => `// ═════ sim/${f} ═════\n` + detTransform(rd('sim', f))),
   ...ARENAS.map((k) => `// ═════ arenas/${k}.js ═════\n` + detTransform(rd('arenas', k + '.js'))),
   '// ═════ sim/90_round.js ═════\n' + detTransform(rd('sim', '90_round.js')),
 ]
@@ -46,7 +46,7 @@ ${FX_OBJECTS.map((n) => `  const ${n} = FX.${n} || new Proxy({}, { get: () => NO
   let RNG = makeRng(env.seed == null ? 1 : env.seed);
   let arena = null;
 ${body.join('\n')}
-  return { ARENAS, makeBean, stepBean, collide, kill, R, DIVE, DT, createRound, packInput, unpackInput, IDLE_INPUT,
+  return { ARENAS, makeBean, stepBean, collide, kill, R, DIVE, DT, createRound, packInput, unpackInput, IDLE_INPUT, POWERS,
     setArena(a) { arena = a; }, reseed(s) { RNG = makeRng(s); }, random: () => RNG() };
 }
 `
@@ -65,7 +65,7 @@ const js = ["'use strict';", det,
   '// ═════ sim/01_base.js (global copy) ═════\n' + base, createSimSrc, follow,
   `const FX_ENV = { ${envFx}, ${envObj} };`,
   'const SIM0 = createSim({ fx: FX_ENV, seed: 1 }); // menus, attract mode, portraits',
-  'const { ARENAS, makeBean, stepBean, collide, R, DIVE } = SIM0;',
+  'const { ARENAS, makeBean, stepBean, collide, R, DIVE, POWERS } = SIM0;',
   ...client.map((f) => `// ═════ ${f} ═════\n` + rd(f)),
 ].join('\n')
 fs.writeFileSync(path.join(outDir, 'game.js'), js)

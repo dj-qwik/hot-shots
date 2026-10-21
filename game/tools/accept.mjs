@@ -26,7 +26,9 @@ const LAZY = {
   'beeline centre': (b) => { const dx = 480 - b.x, dy = (b.y > 700 ? b.y - 400 : 300) - b.y, l = Math.hypot(dx, dy) || 1; return { x: dx / l, y: dy / l, jump: false, dive: false } },
   'up + jump spam': (b, t, A, beans, inp, f) => ({ x: 0, y: -1, jump: f % 20 < 2, dive: false }),
 }
-const winRate = (ctl, n = N) => { let w = 0; for (let k = 0; k < n; k++) if (runRound(G, KEY, P, { 0: ctl }).winner?.i === 0) w++; return w / n }
+// Exploit/skill checks are judged against full-strength opponents (good players), not the deliberately
+// softened practice bots: what matters for real-money play is whether lazy play beats people who play well.
+const winRate = (ctl, n = N) => { let w = 0; for (let k = 0; k < n; k++) if (runRound(G, KEY, P, { 0: ctl }, { botSkill: 0.85, botSpeed: 1 }).winner?.i === 0) w++; return w / n }
 let KEY = ''
 let allPass = true
 const pct = (x) => `${Math.round(x * 100)}%`.padStart(4)

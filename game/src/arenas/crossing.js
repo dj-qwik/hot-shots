@@ -51,7 +51,7 @@ ARENAS.crossing = (() => {
           add('road', lane);
         } else if (kind === 'river') {
           const lane = { v: dir * (rnd(50, 85) + p * 40) };
-          lane.logs = movers(lane, 120, 210, 75, 150, 0);
+          lane.logs = movers(lane, 110, 190, 95, 170, 0);
           add('river', lane);
         } else add('rail', { dir, next: rnd(1.2, 4.5), warn: 0, x: null, len: 640, sp: 1250 });
         if (kind !== 'road' || Math.random() < 0.6) dir = -dir; // rivers always alternate; roads usually do
@@ -78,6 +78,7 @@ ARENAS.crossing = (() => {
     return tmin;
   }
   function knock(b, ky, kx, stun, text) {
+    if (shielded(b)) return;
     b.ky = ky; b.kx = kx; b.stun = Math.max(b.stun, stun); b.hitCd = stun + 0.1; b.scaredT = 0.8;
     sparks(b.x, b.y - 14, 8, ['#fff', '#FFD95B', '#FF557D'], 200, 0.35);
     if (b.human) { beep(130, 0.12, 'sawtooth', 0.05); shake(text === 'CHOO CHOO!' ? 7 : 4); popText(b.x, b.y - 36, text, '#FF557D', 18); }
@@ -85,6 +86,19 @@ ARENAS.crossing = (() => {
 
   return {
     cam() { return camY; },
+    // power-ups appear on grass a few lanes ahead of the pack
+    power: {
+      kinds: ['zoom', 'bubble'], every: [4, 6], // no spring: a super jump clears whole rivers
+      spot() {
+        const ys = beans.filter((b) => b.alive !== false).map((b) => b.y).sort((a, c) => a - c);
+        const mid = laneIdx(ys[ys.length >> 1] ?? BASE);
+        const opts = lanes.filter((l) => l.type === 'grass' && l.i > mid + 1 && l.i < mid + 7);
+        if (!opts.length) return null;
+        const l = opts[(Math.random() * opts.length) | 0];
+        for (let k = 0; k < 6; k++) { const x = rnd(L + 40, Rt - 40); if (l.trees.every((tr) => Math.abs(tr.x - x) > 50)) return { x, y: l.y }; }
+        return null;
+      },
+    },
     key: 'crossing', name: 'Critter Crossing', genre: 'Sprint', theme: 'meadow', timeout: ROUND_SECONDS, maxSpeed: 235,
     objective: 'Cross to the finish! Hop cars (not trucks), ride the logs across rivers, and when the rail lights flash, wait for the train.',
     init(bs) {
@@ -108,7 +122,7 @@ ARENAS.crossing = (() => {
           if (d < min && d > 0.01) { b.x = tr.x + dx / d * min; b.y = lane.y + dy / d * min; }
         }
         // rivers: ride a log or go for a swim
-        if (lane && lane.type === 'river' && !air) {
+        if (lane && lane.type === 'river' && (!air || b.touch)) {
           const log = logUnder(lane, b.x, t);
           if (log) { b.x += lane.v * dt; b.zoff = 2; }
           if (!log || b.x < L + R + 1 || b.x > Rt - R - 1) {
@@ -138,9 +152,10 @@ ARENAS.crossing = (() => {
       if (next && (next.type === 'road' || next.type === 'rail')) {
         // wait at the kerb until the lane ahead is clear long enough to cross it
         const need = (toNext + LH * 0.5) / 210;
-        if (clearIn(next, b.x, t) < need * (1.35 - b.skill * 0.35) && b.waitT < (next.type === 'rail' ? 9 : 1.6)) {
+        // cars can be hopped, so a good driver only waits for trucks (and trains)
+        if (clearIn(next, b.x, t, next.type === 'road' && b.skill > 0.6) < need * (1.35 - b.skill * 0.35) && b.waitT < (next.type === 'rail' ? 9 : 1.6)) {
           b.waitT += 1 / 60;
-          if (next.type === 'road') { let best = b.x, bs = -1e9; for (let x = L + 30; x <= Rt - 30; x += 30) { const sc = Math.min(clearIn(next, x, t), 2) - Math.abs(x - b.x) / 260; if (sc > bs) { bs = sc; best = x; } } tx = best; }
+          if (next.type === 'road') { let best = b.x, bs = -1e9; for (let x = L + 30; x <= Rt - 30; x += 30) { const sc = Math.min(clearIn(next, x, t, b.skill > 0.6), 2) - Math.abs(x - b.x) / 260; if (sc > bs) { bs = sc; best = x; } } tx = best; }
           up = toNext > LH * 0.8 ? -0.3 : 0.25;
         } else if (toNext < LH * 0.6) b.waitT = 0;
       } else if (next && next.type === 'river') {

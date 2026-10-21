@@ -2,7 +2,7 @@
 // Each arena: name, genre, objective, timeout (s), init(beans), update(dt,t), botInput(b,t), draw(t), winner(t, timedOut) -> bean|null
 const ARENAS = {};
 
-function kill(b, t, f = 90) { if (!b.alive) return; b.alive = false; b.out = 0; b.outAt = t; if (b.human) beep(f, 0.3, 'sawtooth', 0.05); }
+function kill(b, t, f = 90) { if (!b.alive) return; if (b.pow === 'bubble' && arena?.power?.rescue && arena.power.rescue(b)) { shielded(b); return; } b.alive = false; b.out = 0; b.outAt = t; if (b.human) beep(f, 0.3, 'sawtooth', 0.05); }
 function placeRing(beans, cx, cy, rx, ry = rx, a0 = 0) { const n = beans.length; beans.forEach((b, i) => { const a = a0 + (i / n) * Math.PI * 2; b.x = cx + Math.cos(a) * rx; b.y = cy + Math.sin(a) * ry; }); }
 function survivalWinner(beans, t, timedOut, score) {
   const alive = beans.filter((b) => b.alive);
