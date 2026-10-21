@@ -15,6 +15,8 @@ jobs:
         run: npm run build
       - name: wallet bridge output
         run: ls -la game/dist-web/wallet && du -sh game/dist-web/wallet
+      - uses: actions/upload-artifact@v4
+        with: { name: wallet-bridge, path: game/dist-web/wallet, retention-days: 7 }
       - name: determinism + network tests
         run: npm test -w @hotshots/game
       - name: real-money end to end on a local chain (deploy, deposit, match, replay-verified co-sign, payout)
