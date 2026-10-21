@@ -5,7 +5,7 @@
  *   · claim() · claimRefund(matchId) · send(to, amountEth | 'max') · waitTx(hash) · explorerTx(hash)
  * and fires a `hswallet` event on window whenever login state or the wallet changes.
  * Config (Privy app id, chain, escrow) comes from the game server's /api/config at runtime.
- * Players sign in with email only: Privy creates a "game wallet" (embedded, self-custodial; we never hold
+ * Players sign in with Google or email only: Privy creates a "game wallet" (embedded, self-custodial; we never hold
  * its keys) so MetaMask is never asked to connect or sign — no browser-extension security prompts.
  * Fund it by sending ETH to its address; cash out with send(). Privy's own pop-ups are off: every action
  * is confirmed by an explicit button in the game (Deposit / Leave / Send to <address>).
@@ -118,9 +118,9 @@ async function boot() {
       config={{
         defaultChain: chain,
         supportedChains: [chain], // Robinhood Chain only
-        loginMethods: ['email'],
+        loginMethods: ['google', 'email'],
         embeddedWallets: { ethereum: { createOnLogin: 'all-users' }, showWalletUIs: false },
-        appearance: { theme: 'dark', accentColor: '#FF557D', walletChainType: 'ethereum-only', showWalletLoginFirst: false },
+        appearance: { theme: 'dark', accentColor: '#FF557D', walletChainType: 'ethereum-only', showWalletLoginFirst: false, landingHeader: 'Sign in to play' },
       }}
     >
       <Bridge cfg={conf.cash} chain={chain} pub={pub} />
