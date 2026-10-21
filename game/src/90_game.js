@@ -304,7 +304,7 @@ function renderHud(force) {
 }
 
 let last = performance.now();
-const AMBIENT = { runway: 'sparkle', hex: 'stars', crown: 'sparkle', laser: 'embers', bubblegum: 'bubbles', turnpike: null, rodeo: 'stars', skyrail: 'snow', floes: 'snow', storm: 'rain', marbles: null, bumper: 'confetti', iceberg: 'snow', crater: 'embers', disco: 'confetti', meteor: 'stars', jelly: 'bubbles', lantern: 'embers', paint: 'sparkle', bounce: 'confetti' };
+const AMBIENT = { runway: 'sparkle', hex: 'stars', crown: 'sparkle', laser: 'embers', bubblegum: 'bubbles', crossing: 'sparkle', turnpike: null, rodeo: 'stars', skyrail: 'snow', floes: 'snow', storm: 'rain', marbles: null, bumper: 'confetti', iceberg: 'snow', crater: 'embers', disco: 'confetti', meteor: 'stars', jelly: 'bubbles', lantern: 'embers', paint: 'sparkle', bounce: 'confetti' };
 function bigCenterText(txt, color, scale, alpha = 1) {
   ctx.save(); ctx.globalAlpha = alpha; ctx.translate(W / 2, H / 2 + 20); ctx.scale(scale, scale);
   ctx.font = '130px Bungee, Impact, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';

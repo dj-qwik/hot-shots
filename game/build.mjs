@@ -15,8 +15,9 @@ import { fileURLToPath } from 'node:url'
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url))
 const S = path.join(ROOT, 'src')
-let ARENAS = ['runway', 'hex', 'crown', 'laser', 'bubblegum', 'turnpike', 'rodeo', 'skyrail', 'floes', 'storm',
-  'marbles', 'bumper', 'iceberg', 'crater', 'disco', 'meteor', 'jelly', 'lantern', 'paint', 'bounce']
+// Retired (files kept for reference, stage ids kept in packages/shared/src/replay.ts): bubblegum, jelly
+let ARENAS = ['runway', 'hex', 'crown', 'laser', 'crossing', 'turnpike', 'rodeo', 'skyrail', 'floes', 'storm',
+  'marbles', 'bumper', 'iceberg', 'crater', 'disco', 'meteor', 'lantern', 'paint', 'bounce']
 // Client functions the simulation may call (effects, sounds, announcer). Checked by tools/freevars.mjs.
 const FX_NAMES = ['puff', 'sparks', 'ring', 'confetti', 'part', 'popText', 'shake', 'hype', 'announce', 'feed',
   'fxStep', 'fxLand', 'fxDive', 'fxTackle', 'fxOut', 'fxScore', 'fxWin', 'beep', 'tone', 'crowdRoar']
