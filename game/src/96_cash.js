@@ -10,6 +10,13 @@ const CASH = (() => {
   const W = () => window.HSWallet;
   const short = (a) => a ? a.slice(0, 6) + '…' + a.slice(-4) : '';
   const enabled = () => !!(C.cfg && C.cfg.enabled && C.privy && W());
+  // the server offers real money but the wallet hasn't loaded (yet, or it failed): say so, never fall back to the demo
+  const pending = () => !!(C.cfg && C.cfg.enabled && C.privy && !W());
+  const walletError = () => window.HSWalletError || null;
+  // catch failures inside the wallet bundle (they happen before it can report anything itself)
+  addEventListener('error', (e) => { if (e && e.filename && e.filename.includes('/wallet/')) { window.HSWalletError = e.message; renderPill(); if (game.screen === 'home') showOverlay(homeCard()); } });
+  addEventListener('unhandledrejection', (e) => { const st = String(e && e.reason && e.reason.stack || ''); if (st.includes('/wallet/')) { window.HSWalletError = String(e.reason.message || e.reason); renderPill(); if (game.screen === 'home') showOverlay(homeCard()); } });
+  setTimeout(() => { if (pending() && !walletError()) { window.HSWalletError = 'The wallet did not start within 20 seconds.'; renderPill(); if (game.screen === 'home') showOverlay(homeCard()); } }, 20000);
   const unit = () => (C.cfg && C.cfg.chainId === 4663 ? 'ETH' : 'tETH');
 
   async function loadConfig() {
@@ -43,7 +50,10 @@ const CASH = (() => {
     if (!C.cfg || !C.privy) return; // offline/demo: keep the simulated test wallet
     const amt = pill.querySelector('.amt'), btn = $('#faucet');
     const net = C.cfg.chainId === 4663 ? 'Robinhood Chain' : 'Robinhood testnet';
-    if (!C.w || !C.w.authenticated || !C.w.address) {
+    if (!W()) {
+      amt.innerHTML = `<small>${net}</small><b>${walletError() ? 'Wallet error' : 'Wallet loading…'}</b>`;
+      btn.textContent = 'Details'; btn.dataset.act = 'menu';
+    } else if (!C.w || !C.w.authenticated || !C.w.address) {
       amt.innerHTML = `<small>${net}</small><b>Not signed in</b>`;
       btn.textContent = 'Sign in'; btn.dataset.act = 'login';
     } else {
@@ -64,7 +74,7 @@ const CASH = (() => {
 
   // ── screens
   function walletBlock() {
-    if (!W()) return `<p class="label">Loading wallet…</p>`;
+    if (!W()) return walletError() ? `<div class="notice"><b>The wallet couldn't start</b><span>${esc(walletError())}</span><span>Reload the page. If it keeps happening, please send a screenshot of this message.</span></div>` : `<p class="label">Loading wallet…</p>`;
     if (!C.w || !C.w.ready) return `<p class="label">Loading wallet…</p>`;
     if (!C.w.authenticated || !C.w.address) return `<button class="btn primary big" id="cashLogin">Sign in to play</button><p class="fine" style="padding:0">Email login creates a wallet for you. You can also connect MetaMask or another wallet.</p>`;
     const stake = parseEth(C.stake), low = C.bal != null && C.bal < stake + GAS_BUFFER;
@@ -216,5 +226,5 @@ const CASH = (() => {
   }
   loadConfig();
   function openSetup() { C.match = null; C.lobby = null; C.err = ''; C.busy = ''; C.showFund = false; game.screen = 'cashSetup'; showOverlay(setupCard()); }
-  return { enabled, onLobby, onMatch, championExtra, unit, openSetup, get state() { return C; }, refresh, isCashMatch: () => !!C.match };
+  return { enabled, pending, walletError, onLobby, onMatch, championExtra, unit, openSetup, get state() { return C; }, refresh, isCashMatch: () => !!C.match };
 })();

@@ -97,7 +97,7 @@ function homeCard() {
     <div class="hero">
       <h1 class="mega" aria-label="Hot Shots"><span class="w1">HOT</span><span class="w2">SHOTS</span></h1>
       <p class="tagline">Thirty-second mini games. <em>Best 2 out of 3.</em> The champion takes 90% of the pot.</p>
-      <div class="row">${CASH.enabled() ? `<button class="btn primary big" id="goCashReal">Play for ${CASH.unit()}</button><button class="btn ghost big" id="goOnline">Free online</button>` : NET.enabled() ? '<button class="btn primary big" id="goOnline">Play online</button><button class="btn ghost big" id="goCash">Test-ETH demo</button>' : '<button class="btn primary big" id="goCash">Play for test ETH</button>'}<button class="btn ghost big" id="goPractice">Practice</button></div>
+      <div class="row">${CASH.enabled() || CASH.pending() ? `<button class="btn primary big" id="goCashReal">Play for ${CASH.unit()}</button><button class="btn ghost big" id="goOnline">Free online</button>` : NET.enabled() ? '<button class="btn primary big" id="goOnline">Play online</button>' : '<button class="btn primary big" id="goCash">Play for test ETH</button>'}<button class="btn ghost big" id="goPractice">Practice</button></div>
       <div class="panel">
         <div class="feats">
           <div class="feat">${icon('flag', '#37d8e9')}<b>20 arenas</b><span>Races, survival, steals and turf wars. Never the same twice in a row.</span></div>
