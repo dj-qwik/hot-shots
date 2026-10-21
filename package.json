@@ -2,14 +2,23 @@
   "name": "hot-shots",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/*", "services/*", "apps/*"],
-  "engines": { "node": ">=22.18" },
+  "workspaces": [
+    "packages/*",
+    "services/*",
+    "apps/*",
+    "game"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
   "scripts": {
     "contracts:build": "cd contracts && forge build",
     "contracts:test": "cd contracts && forge test",
     "abi": "node scripts/export-abi.mjs",
     "test": "node --test 'packages/*/test/*.test.ts' 'services/*/test/*.test.ts'",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "npm run build -w @hotshots/game && npm run build:wallet -w @hotshots/web",
+    "start": "node game/server/index.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.18.0",

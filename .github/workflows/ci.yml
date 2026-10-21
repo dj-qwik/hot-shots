@@ -5,16 +5,22 @@ on:
 jobs:
   game:
     runs-on: ubuntu-latest
-    defaults: { run: { working-directory: game } }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
+      - uses: foundry-rs/foundry-toolchain@v1
       - run: npm install
-      - run: npm run build
+      - name: build game + wallet bridge (Privy)
+        run: npm run build
+      - name: wallet bridge output
+        run: ls -la game/dist-web/wallet && du -sh game/dist-web/wallet
       - name: determinism + network tests
-        run: npm test
+        run: npm test -w @hotshots/game
+      - name: real-money end to end on a local chain (deploy, deposit, match, replay-verified co-sign, payout)
+        run: node game/tools/cash_e2e.mjs
       - name: exploit + fairness suite
+        working-directory: game
         run: for k in bumper laser skyrail; do node tools/accept.mjs $k || exit 1; done
   contracts:
     runs-on: ubuntu-latest
@@ -28,3 +34,5 @@ jobs:
           git clone --depth 1 --branch v5.1.0 https://github.com/OpenZeppelin/openzeppelin-contracts lib/openzeppelin-contracts
       - run: forge build
       - run: forge test
+      - name: deployed bytecode matches the source
+        run: node -e "const a=require('./out/HotShotsEscrow.sol/HotShotsEscrow.json').bytecode.object, b=require('../packages/shared/src/escrowBytecode.json').bytecode; if (a!==b) { console.error('escrowBytecode.json is stale: rebuild and commit'); process.exit(1) } console.log('bytecode matches')"

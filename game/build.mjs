@@ -85,6 +85,7 @@ fs.writeFileSync(path.join(webDir, 'index.html'), `<!doctype html>
 <body>
 ${head}
 <script>window.HS_ONLINE = true;</script>
+<script type="module" src="/wallet/wallet.js"></script>
 <script>
 ${js}</script>
 </body>

@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:wallet": "vite build --config vite.wallet.config.ts"
   },
   "dependencies": {
     "@hotshots/shared": "*",

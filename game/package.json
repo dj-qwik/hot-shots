@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Hot Shots game: deterministic simulation, browser client, and the authoritative multiplayer server.",
-  "engines": { "node": ">=22.12" },
+  "engines": {
+    "node": ">=22.12"
+  },
   "scripts": {
     "build": "node build.mjs",
     "start": "node server/index.mjs",
@@ -13,6 +15,9 @@
     "accept": "node tools/accept.mjs"
   },
   "dependencies": {
-    "ws": "8.18.3"
+    "ws": "8.18.3",
+    "viem": "^2.57.7",
+    "@hotshots/shared": "*",
+    "pg": "^8.13.0"
   }
 }
