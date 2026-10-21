@@ -76,7 +76,7 @@ function statusPage(res) {
   const needsGas = c && c.status === 'needs-gas'
   const body = !c ? '<p>Real-money play is off on this server (no OPERATOR_SECRET).</p>' : `<ol>
     ${step(!!c.owner, 'Owner wallet set', c.owner ? exp(c.owner) + ' — receives the 10% house fee and can pause or veto results' : 'Set OWNER_ADDRESS (your wallet) in Render → hot-shots-game → Environment, then redeploy.')}
-    ${step(!needsGas && c.status !== 'starting', 'Server wallet has gas', `${exp(c.operator)} · balance <b>${esc(c.operatorBalance)}</b> ${c.chainId === 4663 ? 'ETH' : 'testnet ETH'}${needsGas ? '<br>Send about 0.05 testnet ETH here (Robinhood faucet: <a href="https://faucet.testnet.chain.robinhood.com/" target="_blank" rel="noopener">faucet.testnet.chain.robinhood.com</a>). It pays gas for opening lobbies and paying out.' : ''}`)}
+    ${step(!needsGas && c.status !== 'starting', 'Server wallet has gas', `${exp(c.operator)} · balance <b>${esc(c.operatorBalance)}</b> ${c.chainId === 4663 ? 'ETH' : 'testnet ETH'}${needsGas ? (c.chainId === 4663 ? '<br>Send about 0.005 ETH on <b>Robinhood Chain</b> here. It pays the network fees for opening lobbies and paying out (fractions of a cent each).' : '<br>Send about 0.05 testnet ETH here (Robinhood faucet: <a href="https://faucet.testnet.chain.robinhood.com/" target="_blank" rel="noopener">faucet.testnet.chain.robinhood.com</a>). It pays gas for opening lobbies and paying out.') : ''}`)}
     ${step(!!c.escrow, 'Escrow contract deployed', c.escrow ? exp(c.escrow) : c.status === 'deploying' ? 'Deploying now…' : 'Deploys automatically once the wallet has gas.')}
     ${step(c.status === 'ready', 'Real-money matches open', c.status === 'ready' ? 'Players can now choose “Play for tETH”.' : c.error ? 'Error: ' + esc(c.error) : 'Status: ' + esc(c.status))}
   </ol>`
@@ -116,17 +116,21 @@ let cash = null
 // them on independent infrastructure and set COSIGNER_URLS instead.
 if (process.env.OPERATOR_SECRET && process.env.EMBEDDED_COSIGNERS === '2') {
   const { spawn } = await import('node:child_process')
+  // co-signers die with the server (no orphans holding their ports after a restart)
+  const CHILDREN = new Set(); const reap = () => { for (const c of CHILDREN) c.kill() }
+  process.on('exit', reap); for (const sig of ['SIGTERM', 'SIGINT']) process.once(sig, () => { reap(); process.exit(0) })
   const repo = path.resolve(here, '..', '..')
   process.env.COSIGNER_URLS = ''
   for (const [k, n] of [['A', 'a'], ['B', 'b']]) {
     const secret = process.env[`COSIGNER_${k}_SECRET`]
     if (!secret) { log(`EMBEDDED_COSIGNERS: COSIGNER_${k}_SECRET missing`); continue }
     const port = 8700 + (n === 'a' ? 1 : 2)
-    const env = { PATH: process.env.PATH, HOME: process.env.HOME, PORT: String(port), CHAIN_ID: process.env.CHAIN_ID || '46630', RPC_URL: process.env.RPC_URL || '', COSIGNER_SECRET: secret, COSIGNER_NAME: n,
+    const env = { PATH: process.env.PATH, HOME: process.env.HOME, PORT: String(port), CHAIN_ID: process.env.CHAIN_ID || '46630', RPC_URL: process.env.RPC_URL || '', COSIGNER_SECRET: secret, COSIGNER_NAME: n, ALLOW_RAW_KEYS_ON_MAINNET: process.env.ALLOW_RAW_KEYS_ON_MAINNET || '',
       COSIGNER_AUTH_TOKEN: process.env.COSIGNER_AUTH_TOKEN, DIRECTOR_URL: `http://127.0.0.1:${PORT}`, SIM_PATH: path.join(repo, 'game', 'dist', 'sim.cjs'), STAGE_REVISION: process.env.STAGE_REVISION || '1' }
     if (!env.RPC_URL) delete env.RPC_URL
     const start = () => {
       const p = spawn(process.execPath, [path.join(repo, 'services', 'settlement', 'src', 'cosignerMain.ts')], { env, stdio: ['ignore', 'pipe', 'pipe'] })
+      CHILDREN.add(p); p.on('exit', () => CHILDREN.delete(p))
       p.stdout.on('data', (d) => process.stdout.write(`[cosigner-${n}] ${d}`)); p.stderr.on('data', (d) => process.stdout.write(`[cosigner-${n}] ${d}`))
       p.on('exit', (c) => { log(`cosigner-${n} exited (${c}); restarting`); setTimeout(start, 3000) })
     }

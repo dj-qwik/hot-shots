@@ -38,9 +38,11 @@ const cleanup = () => procs.forEach((p) => p.kill())
 // anvil's well-known dev accounts (public test keys)
 const KEYS = ['0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d', '0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a', '0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6']
 const OWNER = privateKeyToAccount('0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6').address
-run('anvil', 'anvil', ['--port', String(ANVIL), '--chain-id', '46630', '--silent'])
+// --mainnet: chain id 4663 with the lean-launch settings (server deploys, derived keys, embedded co-signers)
+const MAIN = process.argv.includes('--mainnet'), CID = MAIN ? '4663' : '46630', EMB = MAIN || process.argv.includes('--embedded')
+run('anvil', 'anvil', ['--port', String(ANVIL), '--chain-id', CID, '--silent'])
 await sleep(1200)
-const chain = getChain(46630, rpc)
+const chain = getChain(Number(CID), rpc)
 const pub = createPublicClient({ chain, transport: http(rpc) })
 const secret = (n) => 'test-secret-' + n + '-'.repeat(40)
 const operator = derivedAccount(secret('op'), 'operator')
@@ -48,10 +50,9 @@ await pub.request({ method: 'anvil_setBalance', params: [operator.address, '0x' 
 
 const token = 'cosigner-token-' + Math.random()
 const director = `http://127.0.0.1:${GAME}`
-const EMB = process.argv.includes('--embedded')
 if (!EMB) for (const [n, p] of [['a', CA], ['b', CB]]) run('cosigner-' + n, 'node', ['services/settlement/src/cosignerMain.ts'], { PORT: String(p), CHAIN_ID: '46630', RPC_URL: rpc, COSIGNER_SECRET: secret('cs' + n), COSIGNER_NAME: n, COSIGNER_AUTH_TOKEN: token, DIRECTOR_URL: director, SIM_PATH: 'game/dist/sim.cjs' })
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hs-cash-'))
-run('game', 'node', ['game/server/index.mjs'], { PORT: String(GAME), CHAIN_ID: '46630', RPC_URL: rpc, OPERATOR_SECRET: secret('op'), OWNER_ADDRESS: OWNER,
+run('game', 'node', ['game/server/index.mjs'], { PORT: String(GAME), CHAIN_ID: CID, ...(MAIN ? { ALLOW_RAW_KEYS_ON_MAINNET: 'i-understand' } : {}), RPC_URL: rpc, OPERATOR_SECRET: secret('op'), OWNER_ADDRESS: OWNER,
   ...(EMB ? { EMBEDDED_COSIGNERS: '2', COSIGNER_A_SECRET: secret('csa'), COSIGNER_B_SECRET: secret('csb') } : { COSIGNER_URLS: `http://127.0.0.1:${CA},http://127.0.0.1:${CB}` }),
   COSIGNER_AUTH_TOKEN: token, DATA_DIR: tmp, POLL_INTERVAL_MS: '1000', PRIVY_APP_ID: 'test' })
 
@@ -73,7 +74,7 @@ function player(key, name) {
   P.ws.on('message', async (d) => {
     const m = JSON.parse(d)
     if (m.t === 'welcome') {
-      const msg = `Sign in to Hot Shots\n\nWallet: ${acct.address}\nNonce: ${m.nonce}\nChain: 46630\n\nI confirm I am 21 years of age or older.\nI understand this game is for entertainment purposes only.\n\nThis only proves you own this wallet. It costs nothing and moves no funds.`
+      const msg = `Sign in to Hot Shots\n\nWallet: ${acct.address}\nNonce: ${m.nonce}\nChain: ${CID}\n\nI confirm I am 21 years of age or older.\nI understand this game is for entertainment purposes only.\n\nThis only proves you own this wallet. It costs nothing and moves no funds.`
       send({ t: 'auth', address: acct.address, sig: await acct.signMessage({ message: msg }) })
     } else if (m.t === 'authOk') { P.authed = true; send({ t: 'queue', mode: 'cash', size: P.size || 2, stake: '0.001' }) }
     else if (m.t === 'authFail' || m.t === 'error') { P.err = m.msg }

@@ -29,6 +29,8 @@ jobs:
         run: npm test -w @hotshots/game
       - name: real-money end to end on a local chain (deploy, deposit, match, replay-verified co-sign, payout)
         run: node game/tools/cash_e2e.mjs
+      - name: real-money end to end on a local chain (deploy, deposit, match, replay-verified co-sign, payout) (mainnet settings, chain 4663)
+        run: node game/tools/cash_e2e.mjs --mainnet
       - name: exploit + fairness suite
         working-directory: game
         run: for k in bumper laser skyrail; do node tools/accept.mjs $k || exit 1; done

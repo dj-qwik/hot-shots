@@ -35,13 +35,15 @@ services:
       - key: NODE_ENV
         value: production
       - key: CHAIN_ID
-        value: "46630"           # Robinhood Chain testnet
+        value: "4663"            # Robinhood Chain MAINNET (real ETH). Testnet is 46630.
+      - key: ALLOW_RAW_KEYS_ON_MAINNET
+        value: i-understand      # lean launch: server-held keys + embedded co-signers (see README "Going to mainnet")
       - key: PRIVY_APP_ID
         value: cmvhen2mi005k0hjwyo66w9rz   # public identifier (safe to commit)
       - key: OWNER_ADDRESS
         sync: false              # set this in the dashboard: your wallet address (0x…)
       - key: EMBEDDED_COSIGNERS
-        value: "2"               # testnet: run 2 co-signer processes beside the server
+        value: "2"               # 2 co-signer processes beside the server (move to separate hosts to harden)
       - key: DATABASE_URL
         fromDatabase:
           name: hot-shots-db

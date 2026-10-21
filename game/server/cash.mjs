@@ -109,7 +109,9 @@ export async function createCash({ createMatch, onLobbyChange }) {
     // matches still pending on it get paid.
     const saved = await store.get(ESCROW_KEY)
     if (saved) { C.escrow = getAddress(saved.address); C.deployBlock = BigInt(saved.block); return }
-    if (chainId === ROBINHOOD_MAINNET_ID) throw new Error('mainnet: deploy the escrow with the Safe as admin and set ESCROW_ADDRESS')
+    // Mainnet normally means a Safe-administered escrow pinned with ESCROW_ADDRESS. The "lean" launch
+    // (ALLOW_RAW_KEYS_ON_MAINNET=i-understand) lets the server deploy it, then hands admin to OWNER_ADDRESS.
+    if (chainId === ROBINHOOD_MAINNET_ID && !(process.env.ALLOW_RAW_KEYS_ON_MAINNET === 'i-understand')) throw new Error('mainnet: deploy the escrow with the Safe as admin and set ESCROW_ADDRESS')
     if (!owner) throw new Error('set OWNER_ADDRESS (your wallet: receives the 10% house fee and can pause/veto)')
     // wait for gas money and for the co-signers to report in
     for (;;) {
@@ -133,6 +135,13 @@ export async function createCash({ createMatch, onLobbyChange }) {
       const id = await pub.readContract({ address: escrow, abi: escrowAbi, functionName: role })
       const h = await wallet.writeContract({ address: escrow, abi: escrowAbi, functionName: 'grantRole', args: [id, who] })
       await pub.waitForTransactionReceipt({ hash: h, timeout: 180000 })
+    }
+    if (chainId === ROBINHOOD_MAINNET_ID) {
+      // start handing the admin role to the owner's wallet (they accept after the 2-day delay; until then the server stays admin)
+      try {
+        const h = await wallet.writeContract({ address: escrow, abi: escrowAbi, functionName: 'beginDefaultAdminTransfer', args: [owner] })
+        await pub.waitForTransactionReceipt({ hash: h, timeout: 180000 }); log('admin transfer to', owner, 'started', h)
+      } catch (e) { log('admin transfer not started:', e.shortMessage || e.message) }
     }
     await store.set(ESCROW_KEY, { address: escrow, block: String(rc.blockNumber), signers, threshold, tx: hash })
     C.escrow = escrow; C.deployBlock = rc.blockNumber

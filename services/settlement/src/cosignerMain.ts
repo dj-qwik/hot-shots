@@ -43,7 +43,7 @@ async function resolveEscrow(): Promise<void> {
   } catch (e) { console.warn('escrow lookup failed:', (e as Error).message) }
   setTimeout(resolveEscrow, 20000)
 }
-if (chainId === ROBINHOOD_MAINNET_ID && !env.ESCROW_ADDRESS) throw new Error('mainnet: pin ESCROW_ADDRESS')
+if (chainId === ROBINHOOD_MAINNET_ID && !env.ESCROW_ADDRESS && env.ALLOW_RAW_KEYS_ON_MAINNET !== 'i-understand') throw new Error('mainnet: pin ESCROW_ADDRESS')
 
 // replay verification against our own copy of the game simulation
 let replay

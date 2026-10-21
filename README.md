@@ -26,7 +26,15 @@ What runs where:
 | Wallet bridge (`apps/web/src/bridge.tsx`) | served at `/wallet/wallet.js` | Privy login, embedded wallets, deposits; the game talks to it via `window.HSWallet` |
 | Escrow (`contracts/`) | Robinhood Chain | Deployed by the server on first boot (testnet only) |
 
-### Going to mainnet (not automated on purpose)
+### Mainnet: the lean launch (what's live now)
+`CHAIN_ID=4663` + `ALLOW_RAW_KEYS_ON_MAINNET=i-understand` (both in `render.yaml`). The server deploys the instant-payout
+escrow itself, makes `OWNER_ADDRESS` guardian + treasury, and starts handing the admin role to `OWNER_ADDRESS`
+(accept with `acceptDefaultAdminTransfer()` from that wallet after the 2-day delay). Keys are derived from Render
+secrets and both co-signers run beside the server, so whoever controls the Render account controls results of matches
+in progress. Players' own wallets are never reachable. Fund the server wallet (`/status`) with ~0.005 ETH for gas.
+After the first boot, pin the escrow with `ESCROW_ADDRESS` + `ESCROW_DEPLOY_BLOCK` so a database loss can't redeploy it.
+
+### Going to mainnet, hardened (recommended next step)
 - Deploy the escrow yourself with a **Safe multisig as admin** (`contracts/script/Deploy.s.sol` enforces this on 4663) and set `ESCROW_ADDRESS`.
 - Replace derived keys with **KMS/HSM signers** (`services/settlement/src/keys.ts` → `kmsAccount`); the code refuses raw keys on mainnet.
 - Run the co-signers on **independent infrastructure** (different provider/account), set `COSIGNER_URLS`, pin `ESCROW_ADDRESS` on each.
