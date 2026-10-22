@@ -6,7 +6,7 @@
 //   spring — the next jump goes much higher and further
 //   shove  — the next dive tackle sends its victim flying
 // One held power at a time (zoom doesn't count as held). An arena opts in with
-//   power: { kinds: ['zoom', …], spot(t) → {x, y} | null, rescue?(b) → true if it saved b, every?, max?, botGrab? }
+//   power: { kinds: ['zoom', …], spot(t) → {x, y, layer?} | null (layer: only beans on that floor can grab it), rescue?(b) → true if it saved b, every?, max?, botGrab? }
 // Deterministic: spawns use the round's RNG; everything is stepped inside createRound().
 const POWERS = {
   zoom: { color: '#37D8E9', label: 'ZOOM!' },
@@ -25,14 +25,14 @@ function createPower(A) {
       P.next = rnd(...(cfg.every || [4.5, 7]));
       if (P.items.length < (cfg.max ?? 2)) {
         const s = cfg.spot(t);
-        if (s) P.items.push({ x: s.x, y: s.y, kind: cfg.kinds[(RNG() * cfg.kinds.length) | 0], life: cfg.life ?? 9, ph: RNG() * 6.28 });
+        if (s) P.items.push({ x: s.x, y: s.y, layer: s.layer ?? null, kind: cfg.kinds[(RNG() * cfg.kinds.length) | 0], life: cfg.life ?? 9, ph: RNG() * 6.28 });
       }
     }
     for (const it of P.items) it.life -= dt;
     P.items = P.items.filter((it) => it.life > 0);
     for (const b of beans) {
       if (!b.alive || b.pow) continue;
-      const i = P.items.findIndex((it) => hyp(b.x - it.x, b.y - it.y) < 28 && b.z < 60);
+      const i = P.items.findIndex((it) => hyp(b.x - it.x, b.y - it.y) < 28 && b.z < 60 && (it.layer == null || it.layer === b.layer));
       if (i < 0) continue;
       const it = P.items.splice(i, 1)[0];
       if (it.kind === 'zoom') b.zoomT = ZOOM_TIME; else b.pow = it.kind;
@@ -45,7 +45,7 @@ function createPower(A) {
     if (!cfg || b.pow || cfg.botGrab === 0) return inp;
     const r = cfg.botGrab ?? 120;
     let best = null, bd = r;
-    for (const it of P.items) { const d = hyp(it.x - b.x, it.y - b.y); if (d < bd) { bd = d; best = it; } }
+    for (const it of P.items) { if (it.layer != null && it.layer !== b.layer) continue; const d = hyp(it.x - b.x, it.y - b.y); if (d < bd) { bd = d; best = it; } }
     if (!best || RNG() > 0.4 + b.skill * 0.6) return inp;
     const d = norm(best.x - b.x, best.y - b.y), w = 0.6;
     return { ...inp, x: inp.x * (1 - w) + d.x * w, y: inp.y * (1 - w) + d.y * w };
