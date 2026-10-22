@@ -151,7 +151,7 @@ const ICONS = {
   plank: '<path d="M4 12h24v5H4zM4 20h24v5H4z" fill="currentColor"/><path d="M9 12v5M17 20v5M23 12v5" stroke="#fff" stroke-width="1.6" opacity=".8"/><path d="M8 6c3-2 6 2 9 0s5-2 7 0" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/>',
   star: '<path d="M16 3l3.8 8 8.7 1.1-6.4 6 1.6 8.7L16 22.6l-7.7 4.2 1.6-8.7-6.4-6 8.7-1.1z" fill="currentColor"/>',
 };
-const GENRE_ICON = { Sprint: 'flag', Race: 'flag', 'Balance race': 'plank', Survival: 'shield', Collection: 'gem', 'Vehicle skill': 'rocket', 'Steal-and-score': 'lantern', Territory: 'paint', 'Arena control': 'crown' };
+const GENRE_ICON = { Sprint: 'flag', Race: 'flag', 'Balance race': 'plank', Survival: 'shield', Collection: 'gem', 'Vehicle skill': 'rocket', 'Steal-and-score': 'lantern', Territory: 'paint', 'Arena control': 'crown', Tag: 'rocket' };
 function icon(name, color = '#fff') { return `<svg viewBox="0 0 32 32" style="color:${color}" aria-hidden="true">${ICONS[name] || ICONS.star}</svg>`; }
 function genreIcon(a) { return icon(GENRE_ICON[a.genre] || 'star', arenaAccent(a)); }
 function arenaAccent(a) { return (THEMES[a?.theme] || THEMES.night).accent; }
@@ -332,7 +332,7 @@ function renderHud(force) {
 }
 
 let last = performance.now();
-const AMBIENT = { runway: 'sparkle', hex: 'stars', crown: 'sparkle', laser: 'embers', bubblegum: 'bubbles', crossing: 'sparkle', turnpike: null, rodeo: 'stars', skyrail: 'snow', floes: 'snow', storm: 'rain', marbles: null, bumper: 'confetti', iceberg: 'snow', crater: 'embers', disco: 'confetti', meteor: 'stars', jelly: 'bubbles', lantern: 'embers', paint: 'sparkle', bounce: 'confetti' };
+const AMBIENT = { runway: 'sparkle', hex: 'stars', crown: 'sparkle', laser: 'embers', bubblegum: 'bubbles', crossing: 'sparkle', fuse: 'embers', turnpike: null, rodeo: 'stars', skyrail: 'snow', floes: 'snow', storm: 'rain', marbles: null, bumper: 'confetti', iceberg: 'snow', crater: 'embers', disco: 'confetti', meteor: 'stars', jelly: 'bubbles', lantern: 'embers', paint: 'sparkle', bounce: 'confetti' };
 function bigCenterText(txt, color, scale, alpha = 1) {
   ctx.save(); ctx.globalAlpha = alpha; ctx.translate(W / 2, H / 2 + 20); ctx.scale(scale, scale);
   ctx.font = '130px Bungee, Impact, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';

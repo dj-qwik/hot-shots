@@ -19,7 +19,7 @@ export interface RoundReplay {
 export const ARENA_KEYS = ['runway', 'hex', 'crown', 'laser', 'bubblegum', 'turnpike', 'rodeo', 'skyrail', 'floes', 'storm',
   'marbles', 'bumper', 'iceberg', 'crater', 'disco', 'meteor', 'jelly', 'lantern', 'paint', 'bounce',
   // added later; ids are append-only so past evidence keeps its meaning (bubblegum and jelly are retired)
-  'crossing'] as const
+  'crossing', 'fuse'] as const
 
 export function stageIdOf(key: string): number {
   const i = (ARENA_KEYS as readonly string[]).indexOf(key)
