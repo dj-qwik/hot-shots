@@ -1,11 +1,24 @@
 // 21 · Hex Hop — survival on two stacked floors. A tile cracks the first time you step on it and drops
 // if you step back on it or linger. Fall through the top floor and you land in the basement; fall through
 // the basement and you're out. Jumping crosses tiles without touching them.
+// STOMP: when a dive ends, the tiles around you crack (your own tile is spared) — break the floor under
+// rivals, at the cost of lying flat for a moment. TWIST at 15 s: the top floor turns to ICE.
 // REFERENCE ARENA for the 2.5D renderer: extruded tiles, a lower level drawn under the upper one,
 // per-level depth sorting (basement beans before top tiles), telegraphed hazards, theme + lighting.
 ARENAS.hex = (() => {
   const r = 27, w = Math.sqrt(3) * r, BASE_Z = -86, THICK = 11;
-  let tiles, beans, storm, debris;
+  let tiles, beans, storm, debris, icy, stomps;
+  const grounded = (b) => b.z <= 0.5 || b.touch;
+  function stomp(b) {
+    const own = tileUnder(b); let n = 0;
+    for (const tl of tiles) {
+      if (tl === own || tl.layer !== b.layer || hyp(tl.x - b.x, tl.y - b.y) > r * 2.3) continue;
+      if (tl.state === 0) { tl.state = 3; n++; } else if (tl.state === 3) { tl.state = 1; tl.t = 0.8; n++; }
+    }
+    stomps.push({ x: b.x, y: b.y, layer: b.layer, t: 0.5 });
+    ring(b.x, b.y - lift(layerZ(b.layer)), b.layer ? '#8f7bff' : '#5ff0ff', 12, 70, 0.35, 5);
+    if (b.human && n) { popText(b.x, b.y - 40, 'STOMP!', '#5ff0ff', 18); shake(3); beep(160, 0.1, 'square', 0.05); }
+  }
   function tileUnder(b) { let best = null, bd = r * 1.04; for (const tl of tiles) { if (tl.layer !== b.layer || tl.state === 2) continue; const d = hyp(tl.x - b.x, tl.y - b.y); if (d < bd) { bd = d; best = tl; } } return best; }
   const layerZ = (layer) => (layer ? BASE_Z : 0);
   // one extruded hex tile in world space at height z
@@ -37,17 +50,34 @@ ARENAS.hex = (() => {
   }
   return {
     key: 'hex', name: 'Hex Hop', genre: 'Survival', theme: 'neon', timeout: ROUND_SECONDS, maxSpeed: 165,
-    objective: 'A tile cracks when you step on it. Step on it again — or stand still — and it drops. Fall through both floors and you are out.',
+    objective: 'Tiles crack when you step on them and drop if you return or linger. Dive to STOMP the tiles around rivals. Fall through both floors and you are out.',
+    power: {
+      kinds: ['bubble', 'shove', 'zoom'], every: [4, 6.5], botGrab: 80,
+      spot() {
+        const c = tiles.filter((tl) => tl.layer === 0 && tl.state === 0);
+        if (beans.filter((b) => b.alive && b.layer === 0).length < 2 || !c.length) return null;
+        const tl = c[(Math.random() * c.length) | 0]; return { x: tl.x, y: tl.y };
+      },
+      // a bubble catches you as you fall out of the basement: you land on a solid tile instead
+      rescue(b) {
+        const c = tiles.filter((tl) => tl.layer === 1 && tl.state === 0 && beans.every((o) => o === b || !o.alive || hyp(o.x - tl.x, o.y - tl.y) > 60));
+        if (!c.length) return false;
+        const tl = c[(Math.random() * c.length) | 0]; b.x = tl.x; b.y = tl.y; b.cur = null; b.stand = 0; return true;
+      },
+    },
+    mods(b) { return icy && b.layer === 0 && b.z <= 0.5 ? { traction: 0.16, slow: 1.1 } : null; },
     init(bs) {
-      beans = bs; tiles = []; storm = 0; debris = [];
+      beans = bs; tiles = []; storm = 0; debris = []; icy = false; stomps = [];
       for (const layer of [0, 1]) {
         let row = 0;
         for (let y = 78; y < 540; y += r * 1.5, row++) for (let x = 110 + (row % 2) * w / 2; x < 860; x += w) tiles.push({ x, y, layer, state: 0, t: 0 });
       }
       const n = beans.length, a0 = rnd(0, Math.PI * 2);
-      beans.forEach((b, i) => { const a = a0 + (i / n) * Math.PI * 2; b.x = 480 + Math.cos(a) * 220; b.y = 300 + Math.sin(a) * 170; b.layer = 0; b.zoff = 0; b.broken = 0; });
+      beans.forEach((b, i) => { const a = a0 + (i / n) * Math.PI * 2; b.x = 480 + Math.cos(a) * 220; b.y = 300 + Math.sin(a) * 170; b.layer = 0; b.zoff = 0; b.broken = 0; b.wasDive = false; });
     },
     update(dt, t) {
+      if (!icy && t >= 15) { icy = true; announce('TWIST: ICE FLOOR!', '#9fe8ff'); }
+      for (const s2 of stomps) s2.t -= dt; stomps = stomps.filter((s2) => s2.t > 0);
       for (const tl of tiles) if (tl.state === 1 && (tl.t -= dt) <= 0) { tl.state = 2; puff(tl.x, tl.y - lift(layerZ(tl.layer)), 4, tl.layer ? 'rgba(143,123,255,.6)' : 'rgba(95,240,255,.6)', 50, 6, 0.4); }
       // after 8 s a storm cracks random tiles so rounds stay short
       if (t > 8 && (storm -= dt) <= 0) { storm = Math.max(0.15, 0.7 - (t - 8) * 0.03); for (let k = 0; k < 5; k++) { const c = tiles.filter((x) => x.state === 0 || x.state === 3); if (c.length) { const tl = c[(Math.random() * c.length) | 0]; tl.state = 1; tl.t = 0.8; } } }
@@ -56,7 +86,10 @@ ARENAS.hex = (() => {
         b.x = clamp(b.x, 70, 890); b.y = clamp(b.y, 50, 560);
         // falling between levels: zoff eases down to the basement height
         if (b.layer === 1 && b.zoff > BASE_Z) { b.zoff = Math.max(BASE_Z, b.zoff - 420 * dt); if (b.zoff === BASE_Z) { fxLand(b); shake(b.human ? 4 : 0); } continue; }
-        if (b.z > 0.5) continue;
+        const diving = b.diveT > 0;
+        if (b.wasDive && !diving) stomp(b);
+        b.wasDive = diving;
+        if (!grounded(b)) continue;
         const tl = tileUnder(b);
         if (!tl) {
           if (b.layer === 0) { b.layer = 1; b.scaredT = 0.8; if (b.human) { beep(300, 0.15, 'sine', 0.05); popText(b.x, b.y - 40, 'BASEMENT!', '#8f7bff', 18); } }
@@ -89,7 +122,14 @@ ARENAS.hex = (() => {
       const probe = { x: b.x + d.x * 30, y: b.y + d.y * 30, layer: b.layer };
       if (!tileUnder(probe) && Math.random() < b.skill) jump = true;
       if (Math.random() < 0.06 * b.skill) jump = true;
-      return { x: d.x, y: d.y, jump, dive: false };
+      // stomp: dive at a nearby rival standing on our floor (only from solid footing)
+      let dive = false, dx = d.x, dy = d.y;
+      const own = tileUnder(b);
+      if (b.diveCd <= 0 && own && own.state === 0 && Math.random() < 0.02 + b.skill * 0.04) {
+        const foe = beans.find((o) => o !== b && o.alive && o.layer === b.layer && hyp(o.x - b.x, o.y - b.y) < 75);
+        if (foe) { const f = norm(foe.x - b.x, foe.y - b.y); dx = f.x; dy = f.y; dive = true; jump = false; }
+      }
+      return { x: dx, y: dy, jump, dive };
     },
     draw(t) {
       // abyss under the basement
@@ -102,6 +142,8 @@ ARENAS.hex = (() => {
       drawAll(beans.filter((b) => b.layer === 1 && b.zoff <= BASE_Z + 1));
       ctx.fillStyle = 'rgba(8,4,30,.28)'; ctx.fillRect(60, 40, 840, 540); // depth haze between floors
       for (const tl of tiles) if (tl.layer === 0 && tl.state !== 2) drawTile(tl, 0, t);
+      if (icy) { ctx.save(); ctx.globalAlpha = 0.38; for (const tl of tiles) if (tl.layer === 0 && (tl.state === 0 || tl.state === 3)) { hexPath(tl.x, tl.y, r - 3); ctx.fillStyle = mat('ice'); ctx.fill(); } ctx.restore(); }
+      for (const s2 of stomps) { const k = 1 - s2.t / 0.5, yy = s2.y - lift(layerZ(s2.layer)); ctx.strokeStyle = `rgba(255,255,255,${s2.t * 1.6})`; ctx.lineWidth = 4; ctx.beginPath(); ctx.ellipse(s2.x, yy, 12 + k * r * 2.3, (12 + k * r * 2.3) * 0.75, 0, 0, Math.PI * 2); ctx.stroke(); }
       drawAll(beans.filter((b) => b.layer === 0 || b.zoff > BASE_Z + 1));
       const alive = beans.filter((b) => b.alive).length, me = beans.find((b) => b.human);
       inScreen(() => {
