@@ -11,7 +11,9 @@ const errs = []; p.on('pageerror', (e) => errs.push(e.message)); p.on('console',
 await p.addInitScript((k) => { try { localStorage.setItem('hs-deck', JSON.stringify([k])) } catch {} }, key)
 await p.goto('file://' + tmp); await p.waitForTimeout(800)
 await p.click('#goPractice'); await p.waitForTimeout(400)
-const start = await p.$('#start, #playPractice, [data-start]'); if (start) await start.click()
+await p.click(`[data-dbg-arena="${key}"]`); await p.waitForTimeout(200)
+if (process.env.MENU_SHOT) await p.screenshot({ path: `${out}_menu.png` })
+await p.click('#dbgStart')
 await p.waitForTimeout(500); await p.keyboard.press('Space')
 if (process.env.HOLD) { await p.waitForTimeout(3500); await p.keyboard.down(process.env.HOLD) }
 let last = 0

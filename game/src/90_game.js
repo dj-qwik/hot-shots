@@ -11,6 +11,7 @@ function bindRound(round) { ROUND = round; arena = round.arena; game.beans = rou
 // Rotation: a shuffled deck of all arenas (remembered on this device) so every arena comes up before any
 // repeats; within a match no repeats and never the same genre twice in a row.
 function pickArena() {
+  const forced = DEBUG.forcedArena(); if (forced) return forced; // practice: the arena the player picked
   const keysA = Object.keys(ARENAS);
   let deck = []; try { deck = JSON.parse(localStorage.getItem('hs-deck') || '[]').filter((k) => ARENAS[k]); } catch {}
   const lastGenre = game.history.length ? ARENAS[game.history[game.history.length - 1]].genre : null;
@@ -32,7 +33,7 @@ function startMatch() {
   // offline roster: you are seat 0, bots fill the rest with a spread of skill
   game.me = 0;
   game.players = Array.from({ length: game.size }, (_, i) => i === 0 ? { i, name: 'You', human: true }
-    : { i, name: BOT_NAMES[(i - 1) % BOT_NAMES.length], skill: rnd(BOT_SKILL[0], BOT_SKILL[1]), speedMul: rnd(BOT_SPEED[0], BOT_SPEED[1]) });
+    : DEBUG.botTune({ i, name: BOT_NAMES[(i - 1) % BOT_NAMES.length], skill: rnd(BOT_SKILL[0], BOT_SKILL[1]), speedMul: rnd(BOT_SPEED[0], BOT_SPEED[1]) }));
   game.wins = Array(game.size).fill(0); game.round = 0; game.history = []; game.roundWinners = [];
   nextRound();
 }
@@ -51,7 +52,7 @@ function nextRound() {
 }
 function beginIntro(seconds) {
   document.body.classList.add('playing');
-  camReset(true); game.phase = 'intro'; game.phaseT = INTRO_SECONDS - seconds; game.t = 0; game.speed = 1; game.winnerBean = null; game.acc = 0;
+  camReset(true); game.phase = 'intro'; game.phaseT = INTRO_SECONDS - seconds; game.t = 0; game.speed = DEBUG.active() ? DEBUG.speed : 1; game.winnerBean = null; game.acc = 0;
   showOverlay(introCard()); $('#hud').hidden = false; $('#touch').hidden = !isTouch; $('#ff').hidden = true;
   renderHud(true);
 }
@@ -285,7 +286,7 @@ $('#ov').addEventListener('click', (e) => {
   const t = e.target.closest('button'); if (!t) return;
   if (game.mode === 'online' && ['again', 'nextRound', 'home'].includes(t.id)) return; // handled by NET
   if (t.id === 'goCash') { game.mode = 'cash'; game.deposited = false; game.screen = 'lobby'; showOverlay(lobbyCard()); }
-  else if (t.id === 'goPractice') { game.mode = 'practice'; game.size = 4; game.screen = 'match'; startMatch(); }
+  else if (t.id === 'goPractice') { DEBUG.open(); }
   else if (t.dataset.tier) { game.stake = parseEth(t.dataset.tier); showOverlay(lobbyCard()); }
   else if (t.dataset.size) { game.size = +t.dataset.size; showOverlay(lobbyCard()); }
   else if (t.id === 'back' || t.id === 'home') { goHome(); }
@@ -309,7 +310,7 @@ function fillLobby() {
 }
 function goHome() { document.body.classList.remove('playing'); game.screen = 'home'; arena = null; $('#hud').hidden = true; $('#touch').hidden = true; showOverlay(homeCard()); }
 $('#faucet').addEventListener('click', () => { if (CASH.state.cfg && CASH.state.privy) return; setWallet(wallet + parseEth('0.05')); SFX.score(); if (game.screen === 'lobby' && !game.deposited) showOverlay(lobbyCard()); });
-$('#ff').addEventListener('click', () => { game.speed = game.speed === 1 ? 3 : 1; $('#ff').textContent = game.speed === 1 ? 'Fast-forward ×3' : 'Normal speed'; });
+$('#ff').addEventListener('click', () => { if (DEBUG.active()) return DEBUG.cycleSpeed(); game.speed = game.speed === 1 ? 3 : 1; $('#ff').textContent = game.speed === 1 ? 'Fast-forward ×3' : 'Normal speed'; });
 
 // ───────────────────────── HUD ─────────────────────────
 let lastHud = '';
@@ -421,6 +422,7 @@ function tick(dt) {
   }
   const me = meBean(), inputs = {};
   if (me && game.active.includes(me)) inputs[me.i] = SIM0.packInput(humanInput());
+  DEBUG.freeze(inputs, me);
   stepRound(() => ROUND.step(inputs));
 }
 // One simulation tick plus the presentation around it (shared by practice and online play).
@@ -436,7 +438,8 @@ function stepRound(step) {
   }
   checkScores();
   const me = meBean();
-  $('#ff').hidden = game.mode === 'online' || (me && game.active.includes(me) && me.alive);
+  $('#ff').hidden = game.mode === 'online' || (!DEBUG.active() && me && game.active.includes(me) && me.alive);
+  if (DEBUG.active()) $('#ff').textContent = `Speed ×${game.speed || 1}`;
   if (ROUND.winner && game.mode !== 'online') endRound(ROUND.winner);
 }
 // Generic score pop-ups: watch each arena's progress fields and celebrate when they tick up.
