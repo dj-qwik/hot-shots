@@ -51,6 +51,11 @@ ARENAS.turnpike = (() => {
   return {
     cam() { return camY; },
     debug() { return { track, pads, oils, cells, LAYOUTS }; },
+    // shared power-ups on the straights (turbo cells stay the track's own thing)
+    power: {
+      kinds: ['zoom', 'shove', 'bubble'], every: [4.5, 6.5], botGrab: 70,
+      spot() { for (let k = 0; k < 12; k++) { const i = 30 + ((Math.random() * (N - 40)) | 0); if (Math.abs(bendAhead(i, -8, 16)) < 0.4) { const p = placeAt(i, rnd(-HW * 0.5, HW * 0.5)); return { x: p.x, y: p.y }; } } return null; },
+    },
     key: 'turnpike', name: 'Turbo Turnpike', genre: 'Race', theme: 'meadow', timeout: ROUND_SECONDS, maxSpeed: 265,
     objective: 'One lap, walls all round. Boost pads sit on the outside line, oil on the inside of the corners. Grab a turbo cell, then dive on a straight to use it.',
     init(bs) {
@@ -93,7 +98,7 @@ ARENAS.turnpike = (() => {
         }
         // oil: spin out
         b.spin -= dt;
-        if (b.z <= 0.5 && b.spin <= 0 && hyp(b.vx, b.vy) > 110 && oils.some((o) => { const ex = (b.x - o.x) / o.rx, ey = (b.y - o.y) / o.ry; return ex * ex + ey * ey < 1; })) { b.spin = 0.7; b.scaredT = 0.7; if (b.human) popText(b.x, b.y - 36, 'OIL!', '#c9cfe8', 16); }
+        if (b.z <= 0.5 && b.spin <= 0 && hyp(b.vx, b.vy) > 110 && oils.some((o) => { const ex = (b.x - o.x) / o.rx, ey = (b.y - o.y) / o.ry; return ex * ex + ey * ey < 1; }) && !shielded(b)) { b.spin = 0.7; b.scaredT = 0.7; if (b.human) popText(b.x, b.y - 36, 'OIL!', '#c9cfe8', 16); }
         // boost pads: a shove along the track
         b.boostCd -= dt;
         if (b.z <= 0.5 && b.boostCd <= 0) for (const pd of pads) if (hyp(b.x - pd.x, b.y - pd.y) < 34) { const q = at(pd.i); b.kx += q.tx * 440; b.ky += q.ty * 440; b.boostCd = 0.8; ring(pd.x, pd.y, '#37D8E9', 10, 60, 0.35, 4); if (b.human) beep(900, 0.08, 'sine', 0.05); }
