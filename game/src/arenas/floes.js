@@ -2,10 +2,16 @@
 // sinks and is gone; every floe slowly melts. Hop between floes (jump) to stay dry. Last one dry wins.
 // Anti-camping: the sinker targets the most crowded floe AND, from 10 s, any floe someone has been on
 // for 4+ s, so parking on one big floe is never safe. Melting shrinks the field so rounds end < 30 s.
+// Stepping just off an edge by accident teeters you back on (1.5 s cooldown); jumps and sinking floes don't.
+// ORCA: a shadow glides under a floe (1.4 s warning), then the orca breaches there, flinging anyone standing
+// over it and shoving the floe — read the shadow and step away or hop off. TWIST at 15 s: a WHIRLPOOL opens in
+// the middle, spiralling floes inward; any floe that reaches the eye is sucked under.
 ARENAS.floes = (() => {
   const POOL = { x1: 24, y1: 30, x2: 936, y2: 580 };
   const THICK = 14;
-  let floes, beans, sinkT, splashes, lastAnnounce;
+  let floes, beans, sinkT, splashes, lastAnnounce, orca, pool;
+  const EYE = { x: 480, y: 305 }, ORCA_WARN = 1.4, BREACH_R = 58;
+  const breachPt = () => orca.f ? { x: orca.f.x + orca.ox, y: orca.f.y + orca.oy } : { x: orca.x, y: orca.y };
   const floeOf = (b) => floes.find((f) => f.state !== 2 && f.r > 4 && hyp(b.x - f.x, b.y - f.y) < f.r);
   const bobZ = (f, t) => Math.sin(t * 1.8 + f.ph) * 2.2 - (f.state === 1 ? (1 - f.t / f.T) * 12 : 0);
   function floePath(f, r, y) {
@@ -22,10 +28,17 @@ ARENAS.floes = (() => {
     ctx.closePath();
   }
   return {
+    debug() { return { floes, orca, pool }; },
     key: 'floes', name: 'Frostbite Floes', genre: 'Survival', theme: 'arctic', timeout: ROUND_SECONDS, maxSpeed: 180,
-    objective: 'Jump between drifting ice floes. Crowded floes — and floes you camp on — crack and sink. Last one dry wins.',
+    objective: 'Jump between drifting ice floes; crowded and camped floes sink. Watch for the orca shadow and get clear before it breaches. Last one dry wins.',
+    power: {
+      kinds: ['bubble', 'shove', 'spring'], every: [4.5, 6.5], botGrab: 55,
+      spot() { const ok = floes.filter((f) => f.state === 0 && f.r > 42); if (!ok.length) return null; const f = ok[(Math.random() * ok.length) | 0]; return { x: f.x, y: f.y }; },
+      rescue(b) { let best = null, bd = 1e9; for (const f of floes) if (f.state === 0 && f.r > 20) { const d = hyp(f.x - b.x, f.y - b.y); if (d < bd) { bd = d; best = f; } } if (!best) return false; b.x = best.x; b.y = best.y; b.vx = b.vy = b.kx = b.ky = 0; return true; },
+    },
     init(bs) {
-      beans = bs; floes = []; sinkT = 3; splashes = []; lastAnnounce = 0;
+      beans = bs; floes = []; sinkT = 4.5; splashes = []; lastAnnounce = 0; pool = null;
+      orca = { phase: 'idle', next: rnd(3, 4.5), t: 0, x: 480, y: 300, f: null, ox: 0, oy: 0, sx: 480, sy: 300 };
       for (let gy = 0; gy < 3; gy++) for (let gx = 0; gx < 4; gx++) {
         floes.push({
           x: 170 + gx * 205 + rnd(-20, 20), y: 120 + gy * 180 + rnd(-15, 15), r: rnd(54, 70), vx: rnd(-18, 18), vy: rnd(-12, 12),
@@ -38,12 +51,43 @@ ARENAS.floes = (() => {
     },
     mods() { return { traction: 0.55 }; },
     update(dt, t) {
+      // TWIST: whirlpool in the middle from 15 s
+      if (!pool && t >= 15) { pool = { t: 0 }; announce('TWIST: WHIRLPOOL!', '#5ab0ff', 'Floes spiral in — the eye swallows them'); }
+      if (pool) pool.t += dt;
+      // orca: pick a spot (usually under someone), glide its shadow there, breach
+      if (orca.phase === 'idle' && (orca.next -= dt) <= 0) {
+        const live = beans.filter((b) => b.alive), floeL = floes.filter((f) => f.state === 0 && f.r > 20);
+        let f = null, ox = 0, oy = 0;
+        if (live.length && Math.random() < 0.7) { const b = live[(Math.random() * live.length) | 0]; f = floeOf(b); if (f) { ox = b.x - f.x; oy = b.y - f.y; } }
+        if (!f && floeL.length) { f = floeL[(Math.random() * floeL.length) | 0]; const a = rnd(0, 6.28), d = rnd(0, f.r * 0.6); ox = Math.cos(a) * d; oy = Math.sin(a) * d; }
+        if (f) { orca.phase = 'stalk'; orca.t = ORCA_WARN; orca.f = f; orca.ox = ox; orca.oy = oy; orca.sx = orca.x; orca.sy = orca.y; }
+        else orca.next = 1;
+      } else if (orca.phase === 'stalk') {
+        const p = breachPt(), k = 1 - orca.t / ORCA_WARN; orca.x = orca.sx + (p.x - orca.sx) * Math.min(1, k * 1.6); orca.y = orca.sy + (p.y - orca.sy) * Math.min(1, k * 1.6);
+        if ((orca.t -= dt) <= 0) {
+          orca.phase = 'breach'; orca.t = 0.7; const p2 = breachPt(); orca.x = p2.x; orca.y = p2.y;
+          ring(p2.x, p2.y, 'rgba(255,255,255,.9)', 10, BREACH_R * 1.4, 0.5, 5); puff(p2.x, p2.y, 14, 'rgba(220,245,255,.9)', 150, 8, 0.6); sparks(p2.x, p2.y - 20, 14, ['#ffffff', '#9fe8ff', '#1b2a44'], 260, 0.55);
+          if (orca.f && orca.f.state !== 2) { const d = norm(orca.f.x - p2.x || 1, orca.f.y - p2.y); orca.f.vx += d.x * 70; orca.f.vy += d.y * 70; }
+          for (const b of beans) {
+            if (!b.alive || b.z > 30) continue;
+            const dx = b.x - p2.x, dy = b.y - p2.y, d = hyp(dx, dy);
+            if (d < BREACH_R && b.hitCd <= 0 && !shielded(b)) { const n = d > 1 ? { x: dx / d, y: dy / d } : { x: 1, y: 0 }; b.kx += n.x * 300; b.ky += n.y * 300; b.vz = 300; b.stun = Math.max(b.stun, 0.5); b.hitCd = 0.6; if (b.human) { popText(b.x, b.y - 36, 'ORCA!', '#5ab0ff', 20); shake(4); } }
+          }
+          if (beans.some((b) => b.human)) beep(90, 0.25, 'sine', 0.06);
+        }
+      } else if (orca.phase === 'breach' && (orca.t -= dt) <= 0) { orca.phase = 'idle'; orca.next = pool ? rnd(2.4, 3.6) : rnd(3.2, 4.8); orca.f = null; }
       for (const f of floes) {
+        if (pool && f.state !== 2) {
+          const dx = EYE.x - f.x, dy = EYE.y - f.y, d = hyp(dx, dy) || 1, k = Math.min(1, pool.t / 2);
+          f.vx += (dx / d * 16 - dy / d * 26) * k * dt; f.vy += (dy / d * 16 + dx / d * 26) * k * dt;
+          const sp = hyp(f.vx, f.vy); if (sp > 70) { f.vx *= 70 / sp; f.vy *= 70 / sp; }
+          if (d < 40 && f.state === 0) { f.state = 1; f.t = f.T = 1.1; }
+        }
         f.x += f.vx * dt; f.y += f.vy * dt;
         if (f.x < POOL.x1 + f.r || f.x > POOL.x2 - f.r) f.vx = -f.vx;
         if (f.y < POOL.y1 + f.r || f.y > POOL.y2 - f.r) f.vy = -f.vy;
         f.x = clamp(f.x, POOL.x1 + f.r, POOL.x2 - f.r); f.y = clamp(f.y, POOL.y1 + f.r, POOL.y2 - f.r);
-        f.r = Math.max(0, f.r - 0.9 * dt);
+        f.r = Math.max(0, f.r - 0.75 * dt);
         if (f.state === 1 && (f.t -= dt) <= 0) { f.state = 2; ring(f.x, f.y, 'rgba(255,255,255,.8)', f.r * 0.5, f.r * 1.3, 0.6, 4); puff(f.x, f.y, 10, 'rgba(230,248,255,.85)', 90, 8, 0.6); }
         // occupancy timer: anyone parked on this floe makes it a target
         const occupied = beans.some((b) => b.alive && b.z <= 0.5 && hyp(b.x - f.x, b.y - f.y) < f.r);
@@ -55,11 +99,11 @@ ARENAS.floes = (() => {
       }
       const live = floes.filter((f) => f.state === 0);
       if ((sinkT -= dt) <= 0 && live.length > 1) {
-        sinkT = Math.max(1.2, 3 - t * 0.08);
+        sinkT = Math.max(1.4, 3.6 - t * 0.09);
         const crowd = (f) => beans.filter((b) => b.alive && hyp(b.x - f.x, b.y - f.y) < f.r).length;
         const score = (f) => crowd(f) * 2 + (t > 10 && f.occ > 4 ? 3 : 0) + (Math.random() - 0.5) * 2;
         const pick = live.sort((a, c) => score(c) - score(a))[0];
-        pick.state = 1; pick.t = pick.T = 1.8;
+        pick.state = 1; pick.t = pick.T = 2.1;
         if (beans.some((b) => b.human && b.alive && hyp(b.x - pick.x, b.y - pick.y) < pick.r)) popText(pick.x, pick.y - 30, 'CRACKING!', '#9fe8ff', 18);
       }
       if (live.length <= 3 && lastAnnounce < 1) { lastAnnounce = 1; announce('LAST FLOES!', '#9fe8ff'); }
@@ -68,9 +112,18 @@ ARENAS.floes = (() => {
         b.x = clamp(b.x, POOL.x1 + 4, POOL.x2 - 4); b.y = clamp(b.y, POOL.y1 + 4, POOL.y2 - 4);
         const f = floeOf(b);
         b.zoff = f ? bobZ(f, t) : 0;
-        if (b.z > 0.5) continue;
+        if (b.z > 0.5 && !b.touch) continue;
         if (f) { b.x += f.vx * dt; b.y += f.vy * dt; if (f.state === 1) b.scaredT = 0.2; }
         else {
+          // teeter: stepping just off an edge by accident wobbles you back on (once every 1.5 s)
+          let near = null; for (const g of floes) if (g.state === 0 && g.r > 12 && hyp(b.x - g.x, b.y - g.y) < g.r + 14) { near = g; break; }
+          if (near && !(b.teeterCd > t)) {
+            const n = norm(b.x - near.x, b.y - near.y); b.x = near.x + n.x * (near.r - 6); b.y = near.y + n.y * (near.r - 6);
+            const vn = b.vx * n.x + b.vy * n.y; if (vn > 0) { b.vx -= n.x * vn * 1.5; b.vy -= n.y * vn * 1.5; }
+            const kn = b.kx * n.x + b.ky * n.y; if (kn > 0) { b.kx -= n.x * kn; b.ky -= n.y * kn; }
+            b.teeterCd = t + 1.5; b.scaredT = 0.6; b.sq = 0.25; if (b.human) popText(b.x, b.y - 34, 'WHOA!', '#9fe8ff', 16);
+            continue;
+          }
           kill(b, t); splashes.push({ x: b.x, y: b.y, t: 0.8 });
           puff(b.x, b.y, 12, 'rgba(220,245,255,.9)', 120, 7, 0.6); sparks(b.x, b.y - 10, 10, ['#ffffff', '#9fe8ff'], 220, 0.5);
         }
@@ -84,15 +137,33 @@ ARENAS.floes = (() => {
       let target = f && safe(f) && f.r > 44 && !parked ? f : null;
       if (!target) {
         let best = null, bs = 1e9;
-        for (const g of floes) { if (!safe(g) || g === f) continue; const gap = hyp(g.x - b.x, g.y - b.y) - g.r; const crowd = beans.filter((o) => o.alive && hyp(o.x - g.x, o.y - g.y) < g.r).length; const s = gap + crowd * 30 - g.r; if (s < bs) { bs = s; best = g; } }
+        // floe-to-floe gap we'd have to jump (from our floe's edge); good bots won't attempt jumps they can't make
+        const reach = (g) => f ? hyp(g.x - f.x, g.y - f.y) - g.r - f.r : hyp(g.x - b.x, g.y - b.y) - g.r;
+        for (const g of floes) { if (!safe(g) || g === f) continue; const gap = reach(g); const crowd = beans.filter((o) => o.alive && hyp(o.x - g.x, o.y - g.y) < g.r).length; const s = gap + crowd * 30 - g.r + (gap > 95 ? 400 * b.skill : 0); if (s < bs) { bs = s; best = g; } }
         target = best || f;
+      }
+      // whirlpool: never pick a floe drifting near the eye
+      if (pool && target && hyp(target.x - EYE.x, target.y - EYE.y) < 110 && Math.random() < b.skill) {
+        let best = null, bs = 1e9;
+        for (const g of floes) { if (!safe(g) || hyp(g.x - EYE.x, g.y - EYE.y) < 130) continue; const s = hyp(g.x - b.x, g.y - b.y) - g.r; if (s < bs) { bs = s; best = g; } }
+        if (best) target = best;
       }
       if (!target) return { x: 0, y: 0, jump: false, dive: false };
       let dx = target.x - b.x, dy = target.y - b.y;
       if (target === f) { const sep = separation(b, beans, 40); dx = dx * 0.02 + sep.x; dy = dy * 0.02 + sep.y; }
-      const d = norm(dx, dy);
+      // orca shadow nearby: step to the far side of the floe (or hop away)
+      if (orca.phase === 'stalk' && orca.t < 1.1 && Math.random() < 0.3 + b.skill * 0.7) {
+        const p = breachPt(), d0 = hyp(b.x - p.x, b.y - p.y);
+        if (d0 < BREACH_R + 18) { const n = d0 > 1 ? norm(b.x - p.x, b.y - p.y) : { x: 1, y: 0 }; const fx = f ? f.x + n.x * f.r * 0.55 : b.x + n.x * 60, fy = f ? f.y + n.y * f.r * 0.55 : b.y + n.y * 60; dx = fx - b.x; dy = fy - b.y; if (f && hyp(fx - p.x, fy - p.y) < BREACH_R) target = null; }
+      }
       let jump = false;
-      if (f && target !== f && hyp(b.x - f.x, b.y - f.y) > f.r - 16 && Math.random() < 0.5 + b.skill * 0.5) jump = true;
+      // jump from the edge, once the landing is within range (skilled bots judge the distance well)
+      // jump from the edge once the landing is in range; otherwise wait at the edge nearest the target
+      if (f && target && target !== f && hyp(b.x - f.x, b.y - f.y) > f.r - 16) { const left = hyp(target.x - b.x, target.y - b.y) - target.r * 0.6; if (left < 105 + (1 - b.skill) * 60 && Math.random() < 0.5 + b.skill * 0.5) jump = true; }
+      if (f && target && target !== f && !jump && f.state === 0 && hyp(target.x - b.x, target.y - b.y) - target.r > 120 && hyp(b.x - f.x, b.y - f.y) > f.r - 28 && Math.random() < 0.3 + b.skill * 0.7) {
+        const n = norm(target.x - f.x, target.y - f.y); dx = f.x + n.x * (f.r - 30) - b.x; dy = f.y + n.y * (f.r - 30) - b.y;
+      }
+      const d = norm(dx, dy);
       return { x: d.x, y: d.y, jump, dive: false };
     },
     draw(t) {
@@ -113,6 +184,20 @@ ARENAS.floes = (() => {
       ctx.fillStyle = ig; ctx.fillRect(x1, y1, x2 - x1, 40);
       // caustic shimmer
       for (let k = 0; k < 9; k++) { const cx = x1 + ((k * 137 + t * 22) % (x2 - x1)), cy = y1 + ((k * 89 + t * 9) % (y2 - y1)); lightPool(cx, cy, 70, '#bdf3ff', 0.06); }
+      // whirlpool
+      if (pool) {
+        const k = Math.min(1, pool.t / 2);
+        const g = ctx.createRadialGradient(EYE.x, EYE.y, 6, EYE.x, EYE.y, 190); g.addColorStop(0, `rgba(2,10,30,${0.9 * k})`); g.addColorStop(0.3, `rgba(20,70,130,${0.45 * k})`); g.addColorStop(1, 'rgba(20,70,130,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(EYE.x, EYE.y, 190, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = `rgba(220,245,255,${0.45 * k})`; ctx.lineWidth = 2.5;
+        for (let j = 0; j < 5; j++) { ctx.beginPath(); for (let q = 0; q < 34; q++) { const a = j * 1.2566 + t * 2.4 - q * 0.17, rr = 14 + q * 5; ctx.lineTo(EYE.x + Math.cos(a) * rr, EYE.y + Math.sin(a) * rr * 0.9); } ctx.stroke(); }
+      }
+      // orca shadow (stalking) and breach foam
+      if (orca.phase === 'stalk') {
+        const k = 1 - orca.t / ORCA_WARN, a = Math.atan2(orca.y - orca.sy, orca.x - orca.sx);
+        ctx.save(); ctx.translate(orca.x, orca.y); ctx.rotate(a); ctx.fillStyle = `rgba(3,10,25,${0.35 + 0.35 * k})`;
+        ctx.beginPath(); ctx.ellipse(0, 0, 46, 17, 0, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.moveTo(-40, 0); ctx.lineTo(-64, -14); ctx.lineTo(-58, 0); ctx.lineTo(-64, 14); ctx.closePath(); ctx.fill(); ctx.restore();
+      }
       // ripples & splashes
       for (const f of floes) if (f.state !== 2 && f.r > 4) { const k = (t * 0.8 + f.ph) % 1; ctx.strokeStyle = `rgba(255,255,255,${0.22 * (1 - k)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(f.x, f.y, f.r * (1.05 + k * 0.35), 0, Math.PI * 2); ctx.stroke(); }
       for (const s of splashes) { const k = 1 - s.t / 0.8; ctx.strokeStyle = `rgba(255,255,255,${s.t})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(s.x, s.y, 8 + k * 40, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.arc(s.x, s.y, 4 + k * 22, 0, Math.PI * 2); ctx.stroke(); }
@@ -145,7 +230,21 @@ ARENAS.floes = (() => {
         }
         ctx.globalAlpha = 1;
       }
-      drawAll(beans);
+      // breach warning ring on top of the ice + the orca itself
+      const ups = [];
+      if (orca.phase === 'stalk') { // dorsal fin + white wake so the hunt reads at a glance
+        const a = Math.atan2(orca.y - orca.sy, orca.x - orca.sx), cx = Math.cos(a), sy2 = Math.sin(a);
+        ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 2.5; for (const sd of [-1, 1]) { ctx.beginPath(); ctx.moveTo(orca.x + cx * 10, orca.y + sy2 * 10); ctx.lineTo(orca.x - cx * 46 - sy2 * 18 * sd, orca.y - sy2 * 46 + cx * 18 * sd); ctx.stroke(); }
+        ups.push({ y: orca.y, draw: () => billboard(orca.x, orca.y, 0, () => { ctx.fillStyle = '#141a2e'; ctx.beginPath(); ctx.moveTo(-9, 0); ctx.quadraticCurveTo(2, -10, 6, -30); ctx.quadraticCurveTo(9, -10, 12, 0); ctx.closePath(); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 1.5; ctx.stroke(); }) });
+      }
+      if (orca.phase === 'stalk' && orca.t < 1.1) { const p = breachPt(), k = 1 - orca.t / 1.1; ctx.strokeStyle = `rgba(255,90,110,${0.4 + 0.5 * Math.sin(t * 18) * k + 0.1})`; ctx.lineWidth = 3; ctx.setLineDash([8, 6]); ctx.beginPath(); ctx.arc(p.x, p.y, BREACH_R, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = `rgba(255,90,110,${0.1 * k})`; ctx.fill(); }
+      if (orca.phase === 'breach') { const p = { x: orca.x, y: orca.y }, k = 1 - orca.t / 0.7, h = Math.sin(k * Math.PI) * 70; ups.push({ y: p.y + 1, draw: () => billboard(p.x, p.y, h - 30, () => {
+        ctx.fillStyle = '#141a2e'; ctx.beginPath(); ctx.ellipse(0, 0, 20, 44, -0.25, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#f4f8ff'; ctx.beginPath(); ctx.ellipse(4, 14, 11, 24, -0.25, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#f4f8ff'; ctx.beginPath(); ctx.ellipse(-7, -20, 6, 4, -0.2, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#141a2e'; ctx.beginPath(); ctx.moveTo(-16, -8); ctx.lineTo(-34, -24); ctx.lineTo(-12, -20); ctx.closePath(); ctx.fill();
+      }) }); }
+      drawAll(beans, ups);
       const alive = beans.filter((b) => b.alive).length;
       inScreen(() => { ctx.font = '12px Bungee, sans-serif'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillText(`${alive} STILL DRY`, 48, H - 92); });
     },
