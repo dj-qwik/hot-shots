@@ -2,11 +2,14 @@
 // dead-end in a gap too wide to jump; a cross bar just before the gaps is the only way to the open lane.
 // Planks collapse a moment after you stand on them (no camping), side gusts blow you off a lane unless you
 // steer into them, and small holes need timed jumps. Fall = back to your last checkpoint.
+// TIGHTROPES: most sections string a thin rope straight across one dead-end gap — a shortcut that skips the
+// cross-bar detour, if you walk it dead straight and no gust catches you. TWIST at 15 s: a storm front —
+// gusts come twice as often and harder, and planks drop faster.
 // Anti-exploit: holding forward hits a dead end (or gets blown off) within seconds.
 ARENAS.skyrail = (() => {
   const LEN = 3100, L = 200, Rt = 760, LANES = [300, 480, 660], PW = 76, PL = 40, GAP = 5;
-  const COLLAPSE = 1.15, REGROW = 1.8;
-  let rows, cells, plats, segs, beans, camY, wind, holes;
+  const REGROW = 1.8, ROPE_W = 24;
+  let rows, cells, plats, segs, beans, camY, wind, holes, storm, COLLAPSE;
   const inRect = (b, c) => Math.abs(b.x - c.x) < c.w / 2 + 3 && Math.abs(b.y - c.y) < c.h / 2 + 3;
   const rowOf = (y) => Math.round(y / PL);
   function addCell(c) { cells.push(c); const r = rowOf(c.y); (rows.get(r) || rows.set(r, []).get(r)).push(c); }
@@ -35,7 +38,8 @@ ARENAS.skyrail = (() => {
         let open; do open = (Math.random() * 3) | 0; while (open === lastOpen);
         lastOpen = open;
         const gapTop = segTop + 14, gapBot = gapTop + GAP * PL, barY = gapBot + 62;
-        segs.push({ yBot: segBot, yTop: segTop, open, gapTop, gapBot, barY });
+        const dead = [0, 1, 2].filter((k) => k !== open), rope = Math.random() < 0.75 ? dead[(Math.random() * 2) | 0] : -1;
+        segs.push({ yBot: segBot, yTop: segTop, open, gapTop, gapBot, barY, rope });
       }
     }
     // lane planks, leaving dead-end gaps and a few small jumpable holes
@@ -45,7 +49,7 @@ ARENAS.skyrail = (() => {
       for (let y = 230; y < LEN - 30; y += PL) {
         if (onPlat(y)) continue;
         const seg = segs.find((s) => y <= s.yBot && y > s.yTop - 1);
-        if (seg && li !== seg.open && y >= seg.gapTop && y <= seg.gapBot) continue; // dead end
+        if (seg && li !== seg.open && y >= seg.gapTop && y <= seg.gapBot) { if (li === seg.rope) addCell({ x: lx, y, w: ROPE_W, h: PL, state: 0, t: 0, lane: li, rope: true }); continue; } // dead end (or a tightrope)
         const nearBar = seg && Math.abs(y - seg.barY) < PL * 2.5;
         const nearGap = seg && y > seg.gapBot && y < seg.gapBot + PL * 2;
         if (!nearBar && !nearGap && y - lastHole > PL * 4 && !onPlat(y + PL) && !onPlat(y - PL) && Math.random() < 0.07) { lastHole = y; holes.push({ x: lx, y }); continue; }
@@ -57,6 +61,14 @@ ARENAS.skyrail = (() => {
   }
 
   function drawPlank(c, t) {
+    if (c.rope) {
+      if (c.state === 2) return;
+      const sw = c.state === 1 ? Math.sin(t * 40 + c.y) * 2 : Math.sin(t * 3 + c.y * 0.05) * 1.5;
+      ctx.fillStyle = '#6b4120'; for (let k = -1; k <= 1; k += 2) ctx.fillRect(c.x - 9 + sw, c.y + k * 9 - 1.5, 18, 4);
+      ctx.strokeStyle = c.state === 1 ? '#ff9a5a' : '#e8c48a'; ctx.lineWidth = 3;
+      for (const dx of [-6, 6]) { ctx.beginPath(); ctx.moveTo(c.x + dx + sw, c.y - c.h / 2); ctx.lineTo(c.x + dx + sw, c.y + c.h / 2); ctx.stroke(); }
+      return;
+    }
     let y = c.y, a = 1, jx = 0;
     if (c.state === 1) { const k = 1 - clamp(c.t / COLLAPSE, 0, 1); jx = k > 0.45 ? Math.sin(t * 60 + c.x) * 1.6 * k : 0; }
     if (c.state === 2) {
@@ -81,30 +93,45 @@ ARENAS.skyrail = (() => {
   return {
     cam() { return camY; },
     key: 'skyrail', name: 'Skyrail Scramble', genre: 'Balance race', theme: 'sunset', timeout: ROUND_SECONDS, maxSpeed: 215,
-    objective: 'Two of three lanes dead-end at a big gap. Switch lanes on the cross bar before the red signs. Planks drop if you stand still, and gusts blow you sideways.',
+    objective: 'Two lanes dead-end at a big gap: switch on the cross bar, or walk the tightrope straight across if you dare. Planks drop if you stand still; gusts blow you off.',
+    power: {
+      kinds: ['zoom', 'bubble'], every: [4, 6], botGrab: 70,
+      spot() {
+        const ys = beans.map((b) => b.y).sort((a, c) => a - c), lead = ys[0] ?? LEN;
+        const opts = cells.filter((c) => !c.rope && !c.bar && c.state === 0 && c.y < lead - 120 && c.y > lead - 520);
+        return opts.length ? (({ x, y }) => ({ x, y }))(opts[(Math.random() * opts.length) | 0]) : null;
+      },
+    },
     init(bs) {
       beans = bs; build();
       const n = beans.length;
       beans.forEach((b, i) => { b.x = L + 40 + (i + 0.5) * (Rt - L - 80) / n; b.y = LEN - 90; b.fy = -1; b.fx = 0; b.cp = plats[0]; b.lane = null; b.falls = 0; });
       camY = LEN - 660;
-      wind = { next: rnd(3.5, 5.5), warn: 0, on: 0, dir: 1 };
+      wind = { next: rnd(3.5, 5.5), warn: 0, on: 0, dir: 1 }; storm = false; COLLAPSE = 1.15;
     },
     update(dt, t) {
+      if (!storm && t >= 15) { storm = true; COLLAPSE = 0.8; wind.next = Math.min(wind.next, t + 1.5); announce('TWIST: STORM FRONT!', '#9fe8ff', 'Gusts twice as often, planks drop faster'); }
       for (const c of cells) { if (c.state === 1 && (c.t -= dt) <= 0) { c.state = 2; c.t = REGROW; } else if (c.state === 2 && (c.t -= dt) <= 0) c.state = 0; }
       // gusts: 1.2 s warning, then 1.3 s of sideways push
       if (wind.on > 0) wind.on -= dt;
       else if (wind.warn > 0) { wind.warn -= dt; if (wind.warn <= 0) { wind.on = 1.3; hype(0.2); } }
-      else if (t > wind.next) { wind.dir = Math.random() < 0.5 ? -1 : 1; wind.warn = 1.2; wind.next = t + rnd(4.2, 6); if (beans.some((b) => b.human)) announce(wind.dir > 0 ? 'GUST  ➜' : '⬅  GUST', '#9fe8ff'); }
+      else if (t > wind.next) { wind.dir = Math.random() < 0.5 ? -1 : 1; wind.warn = storm ? 0.9 : 1.2; wind.next = t + (storm ? rnd(2.2, 3.2) : rnd(4.2, 6)); if (beans.some((b) => b.human)) announce(wind.dir > 0 ? 'GUST  ➜' : '⬅  GUST', '#9fe8ff'); }
       for (const b of beans) {
         b.x = clamp(b.x, L - 10, Rt + 10); b.y = clamp(b.y, 60, LEN - 30);
         const plat = platAt(b);
-        if (wind.on > 0 && !plat) { b.x += wind.dir * 125 * dt; b.scaredT = 0.2; }
-        if (b.z > 0.5) continue;
+        if (wind.on > 0 && !plat) { b.x += wind.dir * (storm ? 160 : 125) * dt; b.scaredT = 0.2; }
+        if (b.z > 0.5 && !b.touch) continue;
         if (plat) { if (plat.kind !== 'depot' && (!b.cp || plat.y < b.cp.y)) b.cp = plat; continue; }
         const cell = cellAt(b);
         if (cell) {
           if (cell.state === 0) { cell.state = 1; cell.t = COLLAPSE; }
           continue;
+        }
+        // a bubble catches you: back onto the nearest standing plank, no checkpoint penalty
+        if (b.pow === 'bubble') {
+          let best = null, bd = 160;
+          for (const c of cells) if (c.state === 0 && !c.rope) { const d = hyp(c.x - b.x, c.y - b.y); if (d < bd) { bd = d; best = c; } }
+          if (best) { shielded(b); b.x = best.x; b.y = best.y; b.vx = b.vy = b.kx = b.ky = 0; continue; }
         }
         // fell: back to the last checkpoint
         puff(b.x, b.y, 8, 'rgba(255,255,255,.7)', 90, 7, 0.5);
@@ -126,6 +153,15 @@ ARENAS.skyrail = (() => {
         const lane = laneOf(b.x);
         tx = lane;
         if (seg) {
+          // brave, skilled bots walk the tightrope when no gust is due while they're on it
+          const calm = wind.on <= 0 && wind.warn <= 0 && wind.next - t > 1.6;
+          const onRope = LANES.indexOf(lane) === seg.rope && b.y < seg.gapBot + PL * 2 && b.y > seg.gapTop - 4;
+          if (onRope && (b.y < seg.gapBot || (calm && b.skill > 0.62 && b.ropeTry !== seg && Math.random() < 0.5 + b.skill * 0.5))) {
+            if (b.y >= seg.gapBot) b.ropeTry = seg;
+            const d = norm(clamp((lane - b.x) / 10, -1, 1) - (wind.on > 0 ? wind.dir * (0.5 + b.skill) : 0), -1);
+            return { x: d.x, y: d.y, jump: false, dive: false };
+          }
+          if (onRope && b.ropeTry !== seg) b.ropeTry = seg;
           const deadHere = LANES.indexOf(lane) !== seg.open;
           if (deadHere && b.y > seg.gapBot - 4) {
             // walk to the bar, then slide along it to the open lane
@@ -194,6 +230,12 @@ ARENAS.skyrail = (() => {
           }
           const sy = s.gapBot + 8;
           if (s.gapBot - 10 > camY) { ctx.save(); ctx.translate(lx, s.gapBot - 2); ctx.rotate(0.35); ctx.fillStyle = '#6b4120'; ctx.fillRect(-30, -4, 34, 10); ctx.restore(); }
+          if (li === s.rope) { if (vis(sy)) signs.push({ y: sy, draw: () => billboard(lx + 30, sy, 0, () => {
+            ctx.fillStyle = '#3a2a1a'; ctx.fillRect(-1.5, -30, 3, 30);
+            glow('#FFD95B', 10, () => { ctx.fillStyle = '#FFD95B'; ctx.beginPath(); ctx.moveTo(0, -56); ctx.lineTo(14, -30); ctx.lineTo(-14, -30); ctx.closePath(); ctx.fill(); });
+            ctx.fillStyle = '#3a2a1a'; ctx.font = '13px Bungee, Impact, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('!', 0, -38);
+            ctx.fillStyle = 'rgba(10,13,36,.85)'; roundRect(-30, -76, 60, 16, 6); ctx.fill(); ctx.fillStyle = '#FFD95B'; ctx.font = '10px Bungee, Impact, sans-serif'; ctx.fillText('ROPE', 0, -68);
+          }) }); continue; }
           if (vis(sy)) signs.push({ y: sy, draw: () => billboard(lx, sy, 0, () => {
             ctx.fillStyle = '#3a2a1a'; ctx.fillRect(-1.5, -30, 3, 30);
             const p = 0.7 + 0.3 * Math.sin(t * 8);
