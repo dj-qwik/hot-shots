@@ -1,10 +1,13 @@
 // 33 · Paint the Town — every step paints the floor your colour, but painting costs ink. You refill ONLY by
 // standing on your own colour (or grabbing a paint orb, which also bursts a big splash). Your own colour
 // speeds you up; rivals' colour slows you. Paint over the leader. First to 30% of the floor, or most at the buzzer.
+// SPLAT: a dive with enough ink (45) bursts a big blob where you land — spend ink on splats or on steps?
+// TWIST at 15 s: a RAIN CLOUD sweeps across the board and washes every colour off the strip beneath it.
 ARENAS.paint = (() => {
   const CS = 40, X0 = 60, Y0 = 60, COLS = 21, ROWS = 12, N = COLS * ROWS, TARGET_FRAC = 0.3;
   const INK = 100, COST = 7, REFILL = 70;
-  let grid, beans, orbs, orbT, jit;
+  let grid, beans, orbs, orbT, jit, rain, twisted;
+  const SPLAT = 45, RAIN_W = 3, RAIN_SPEED = 3.2; // rain: columns wide, columns per second
   const target = () => Math.round(N * TARGET_FRAC);
   const cellOf = (x, y) => { const cx = Math.floor((x - X0) / CS), cy = Math.floor((y - Y0) / CS); return cx >= 0 && cy >= 0 && cx < COLS && cy < ROWS ? cy * COLS + cx : -1; };
   const centre = (i) => ({ x: X0 + (i % COLS) * CS + CS / 2, y: Y0 + Math.floor(i / COLS) * CS + CS / 2 });
@@ -36,12 +39,13 @@ ARENAS.paint = (() => {
   }
   return {
     key: 'paint', name: 'Paint the Town', genre: 'Territory', theme: 'sunset', timeout: ROUND_SECONDS, maxSpeed: 215,
-    objective: `Walk to paint the floor your colour. Painting uses ink — refill by standing on your own colour. First to ${Math.round(TARGET_FRAC * 100)}% wins.`,
+    objective: `Walk to paint your colour (refill ink on your own colour). Dive to SPLAT a blob for 45 ink. First to ${Math.round(TARGET_FRAC * 100)}% wins.`,
+    power: { kinds: ['zoom', 'shove'], every: [4.5, 6.5], spot() { return { x: rnd(X0 + 60, X0 + COLS * CS - 60), y: rnd(Y0 + 50, Y0 + ROWS * CS - 50) }; } },
     init(bs) {
-      beans = bs; grid = new Int8Array(N).fill(-1); orbs = []; orbT = 1.5;
+      beans = bs; grid = new Int8Array(N).fill(-1); orbs = []; orbT = 1.5; rain = null; twisted = false;
       jit = Array.from({ length: N }, () => ({ x: rnd(-4, 4), y: rnd(-4, 4), s: rnd(0.92, 1.12) }));
       placeRing(beans, 480, 300, 280, 160, rnd(0, Math.PI * 2));
-      beans.forEach((b) => { b.painted = 0; b.ink = INK; b.inkFlash = 0; burst(b, b.x, b.y, 1); });
+      beans.forEach((b) => { b.painted = 0; b.ink = INK; b.inkFlash = 0; b.prevDive = 0; b.splat = 0; burst(b, b.x, b.y, 1); });
     },
     mods(b) {
       const i = cellOf(b.x, b.y), g = i >= 0 ? grid[i] : -1;
@@ -50,10 +54,23 @@ ARENAS.paint = (() => {
     update(dt, t) {
       if ((orbT -= dt) <= 0 && orbs.length < 3) { orbT = 2.6; orbs.push({ x: rnd(X0 + 50, X0 + COLS * CS - 50), y: rnd(Y0 + 50, Y0 + ROWS * CS - 50), drop: 0.8 }); }
       for (const o of orbs) o.drop = Math.max(0, o.drop - dt);
+      if (!twisted && t >= 15) { twisted = true; rain = { dir: Math.random() < 0.5 ? 1 : -1, c: 0 }; rain.c = rain.dir > 0 ? -RAIN_W : COLS; announce('TWIST: RAIN — IT WASHES PAINT AWAY!', '#5ab0ff'); }
+      if (rain) {
+        rain.c += rain.dir * RAIN_SPEED * dt;
+        for (let cx = Math.floor(rain.c); cx < Math.floor(rain.c) + RAIN_W; cx++) if (cx >= 0 && cx < COLS) for (let cy = 0; cy < ROWS; cy++) {
+          const i = cy * COLS + cx, g = grid[i]; if (g < 0) continue;
+          const o = beans.find((q) => q.i === g); if (o) o.painted--; grid[i] = -1;
+        }
+        if (rain.c > COLS + 1 || rain.c < -RAIN_W - 1) rain = null;
+      }
       for (const b of beans) {
         b.x = clamp(b.x, X0 + 10, X0 + COLS * CS - 10); b.y = clamp(b.y, Y0 + 8, Y0 + ROWS * CS - 8);
         b.inkFlash = Math.max(0, b.inkFlash - dt);
-        if (b.z > 0.5) continue;
+        // splat dive: arm on take-off (if there's ink), burst on landing
+        if (b.diveT > b.prevDive + 0.001) { if (b.ink >= SPLAT) { b.ink -= SPLAT; b.splat = 1; } else if (b.human) popText(b.x, b.y - 40, 'NEED 45 INK', '#FF557D', 14); }
+        if (b.splat && b.diveT <= 0) { b.splat = 0; const ci = cellOf(b.x, b.y); if (ci >= 0) { const cx = ci % COLS; for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = cx + dx, Y = Math.floor(ci / COLS) + dy; if (X >= 0 && Y >= 0 && X < COLS && Y < ROWS) paintCell(b, Y * COLS + X, true); } } ring(b.x, b.y, b.color, 10, 70, 0.4, 7); sparks(b.x, b.y, 14, [b.color, '#fff'], 240, 0.45); if (b.human) beep(420, 0.1, 'sine', 0.05); }
+        b.prevDive = b.diveT;
+        if (b.z > 0.5 && !b.touch) continue;
         const i = cellOf(b.x, b.y);
         // slow passive regen means nobody is ever locked out; standing on your own colour is the fast refill
         b.ink = Math.min(INK, b.ink + (i >= 0 && grid[i] === b.i ? REFILL : 6) * dt);
@@ -87,8 +104,15 @@ ARENAS.paint = (() => {
         }
         b.plan = best || centre((Math.random() * N) | 0);
       }
+      if (rain && b.plan) { const pc = Math.floor((b.plan.x - X0) / CS); if (pc >= rain.c - 1 && pc <= rain.c + RAIN_W + 2 * (rain.dir > 0 ? 1 : 0)) b.plan = { x: clamp(X0 + (rain.dir > 0 ? rain.c - 3 : rain.c + RAIN_W + 3) * CS, X0 + 20, X0 + COLS * CS - 20), y: b.plan.y }; }
       const d = seek(b, b.plan.x, b.plan.y);
-      return { x: d.x, y: d.y, jump: false, dive: false };
+      let dive = false;
+      if (b.ink >= SPLAT + 30 && b.diveCd <= 0 && b.z <= 0.01) {
+        const i = cellOf(b.x + d.x * 70, b.y + d.y * 70); let foreign = 0;
+        if (i >= 0) for (const dj of [0, -1, 1, -COLS, COLS, -COLS - 1, -COLS + 1, COLS - 1, COLS + 1]) { const j = i + dj; if (j >= 0 && j < N && grid[j] !== b.i) foreign++; }
+        dive = foreign >= 7 && Math.random() < 0.04 + b.skill * 0.08;
+      }
+      return { x: d.x, y: d.y, jump: false, dive };
     },
     draw(t) {
       const BW = COLS * CS, BH = ROWS * CS;
@@ -120,7 +144,16 @@ ARENAS.paint = (() => {
         contactShadow(o.x, o.y, 18, 10, 0.3);
         lightPool(o.x, o.y, 60, 'rgba(255,255,255,1)', 0.25);
       }
+      if (rain) {
+        const x0 = X0 + rain.c * CS, w = RAIN_W * CS;
+        ctx.save(); ctx.beginPath(); ctx.rect(X0, Y0, COLS * CS, ROWS * CS); ctx.clip();
+        ctx.fillStyle = 'rgba(40,80,160,.28)'; ctx.fillRect(x0, Y0, w, ROWS * CS);
+        ctx.strokeStyle = 'rgba(190,225,255,.55)'; ctx.lineWidth = 1.5;
+        for (let k = 0; k < 40; k++) { const rx = x0 + ((k * 37 + t * 60) % w), ry = Y0 + ((k * 71 + t * 520) % (ROWS * CS)); ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(rx - 3, ry + 12); ctx.stroke(); }
+        ctx.restore();
+      }
       const extras = [];
+      if (rain) extras.push({ y: Y0 - 30, draw: () => { const x = X0 + (rain.c + RAIN_W / 2) * CS; for (const yy of [Y0 + 40, Y0 + ROWS * CS / 2, Y0 + ROWS * CS - 40]) billboard(x, yy, 150, () => { ctx.fillStyle = 'rgba(70,90,130,.75)'; for (const [cx, cy, r] of [[-40, 0, 26], [-10, -12, 32], [26, -4, 28], [50, 4, 20]]) { ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill(); } ctx.fillStyle = 'rgba(200,220,255,.25)'; ctx.beginPath(); ctx.arc(-12, -22, 18, 0, Math.PI * 2); ctx.fill(); }); } });
       const rainbow = ['#FF557D', '#FFB547', '#7EE2B8', '#37D8E9', '#8F75FF'];
       for (const o of orbs) extras.push({ y: o.y, draw: () => billboard(o.x, o.y, 22 + Math.sin(t * 4 + o.x) * 4 + o.drop * 300, () => {
         const c = rainbow[Math.floor(t * 3 + o.x) % rainbow.length];

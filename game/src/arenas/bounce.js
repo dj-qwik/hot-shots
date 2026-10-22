@@ -1,52 +1,77 @@
 // 45 · Bounce House Brawl — king of the hill on an inflatable. Of everyone standing on the glowing pad, the
 // bean closest to its centre banks time — at full rate alone, half rate while someone else is on it.
 // The pad shrinks over its life and hops to a new spot (shown in advance). Airborne beans don't score.
-// Trampolines fling you forward along your run direction — a skill shortcut to the next pad.
+// Trampolines fling you forward along your run direction — a skill shortcut to the next pad — and landing
+// from a trampoline ON a pad is a GROUND POUND that blasts everyone near you off it.
+// TWIST at 15 s: DOUBLE PAD — a second pad appears; each has its own king, so the crowd has to split.
 ARENAS.bounce = (() => {
   const TARGET = 6, X1 = 70, X2 = 890, Y1 = 60, Y2 = 545;
-  let pad, nextPad, padT, padLife, tramps, beans;
+  let pads, padLife, tramps, beans, twisted;
   const randSpot = () => ({ x: rnd(X1 + 110, X2 - 110), y: rnd(Y1 + 95, Y2 - 95) });
-  const padR = () => 46 + 28 * clamp(padT / padLife, 0, 1); // 74 → 46 as the pad ages
+  const padR = (pd) => 46 + 28 * clamp(pd.t / padLife, 0, 1); // 74 → 46 as the pad ages
   function newPad(from) {
     let p, tries = 0;
-    do { p = randSpot(); tries++; } while (tries < 40 && (hyp(p.x - from.x, p.y - from.y) < 260 || tramps.some((s) => hyp(s.x - p.x, s.y - p.y) < 125)));
+    const others = pads || [];
+    do { p = randSpot(); tries++; } while (tries < 40 && (hyp(p.x - from.x, p.y - from.y) < 260 || others.some((o) => o !== from && hyp(p.x - o.x, p.y - o.y) < 220) || tramps.some((s) => hyp(s.x - p.x, s.y - p.y) < 125)));
     return p;
   }
+  const makePad = (from, t0) => ({ ...newPad(from), t: t0, next: null, king: null, contested: false });
+  const onPad = (b) => pads.find((pd) => hyp(b.x - pd.x, b.y - pd.y) < padR(pd));
   return {
     key: 'bounce', name: 'Bounce House Brawl', genre: 'Arena control', theme: 'candy', timeout: ROUND_SECONDS, maxSpeed: 210, tackle: 520,
-    objective: 'Stand closest to the centre of the glowing pad to bank time. Alone banks double. Shove rivals off — first to 6 seconds.',
-    _dbg: { pad: () => pad },
+    objective: 'Stand closest to the centre of the glowing pad to bank time (alone = double). Land on it from a trampoline to blast rivals off. First to 6 s.',
+    _dbg: { pad: () => pads[0] },
+    power: { kinds: ['shove', 'spring', 'bubble'], every: [4.5, 6.5], spot() { return randSpot(); } },
     init(bs) {
-      beans = bs; padLife = 6; padT = padLife;
+      beans = bs; padLife = 6; pads = null; twisted = false;
       tramps = [];
       const spots = [[200, 150], [480, 120], [760, 150], [200, 460], [480, 490], [760, 460]];
       for (const [x, y] of spots) tramps.push({ x: x + rnd(-25, 25), y: y + rnd(-15, 15), cd: 0, dip: 0 });
-      pad = { ...newPad({ x: -999, y: -999 }) }; nextPad = null;
+      pads = []; pads.push(makePad({ x: -999, y: -999 }, padLife));
       placeRing(beans, 480, 305, 300, 175, rnd(0, Math.PI * 2));
-      beans.forEach((b) => { b.cap = 0; b.kingT = 0; });
+      beans.forEach((b) => { b.cap = 0; b.kingT = 0; b.pound = 0; });
     },
     update(dt, t) {
       padLife = t > 18 ? 4.5 : t > 10 ? 5.2 : 6;
-      padT -= dt;
-      if (padT < 1.6 && !nextPad) nextPad = newPad(pad);
-      if (padT <= 0) { pad = nextPad; nextPad = null; padT = padLife; ring(pad.x, pad.y, '#7EE2B8', 10, 90, 0.5, 6); }
-      const r = padR();
-      // king of the hill: grounded beans on the pad, closest to centre banks
-      const on = beans.filter((b) => b.alive && b.z < 4 && hyp(b.x - pad.x, b.y - pad.y) < r).sort((a, c) => hyp(a.x - pad.x, a.y - pad.y) - hyp(c.x - pad.x, c.y - pad.y));
-      pad.contested = on.length > 1; pad.king = on[0] || null;
-      if (pad.king) {
-        const k = pad.king, rate = pad.contested ? 0.5 : 1;
-        const before = k.cap; k.cap += dt * rate; k.kingT += dt;
-        if (k.human && Math.floor(k.cap * 2) !== Math.floor(before * 2)) beep(700 + k.cap * 50, 0.04, 'sine', 0.03);
-        if (Math.random() < dt * 8) part({ x: k.x + rnd(-10, 10), y: k.y, vy: -40, size: 2.5, life: 0.6, color: '#FFD95B', kind: 'dot', drag: 1, g: -30 });
+      if (!twisted && t >= 15) { twisted = true; pads.push(makePad(pads[0], padLife + 1.5)); ring(pads[1].x, pads[1].y, '#FFD95B', 12, 100, 0.5, 7); announce('TWIST: DOUBLE PAD!', '#FFD95B'); }
+      for (const pd of pads) {
+        pd.t -= dt;
+        if (pd.t < 1.6 && !pd.next) pd.next = newPad(pd);
+        if (pd.t <= 0) { Object.assign(pd, pd.next, { next: null, t: padLife }); ring(pd.x, pd.y, '#7EE2B8', 10, 90, 0.5, 6); }
+        const r = padR(pd);
+        // king of the hill: grounded beans on the pad, closest to centre banks
+        const on = beans.filter((b) => b.alive && b.z < 4 && hyp(b.x - pd.x, b.y - pd.y) < r).sort((a, c) => hyp(a.x - pd.x, a.y - pd.y) - hyp(c.x - pd.x, c.y - pd.y));
+        pd.contested = on.length > 1; pd.king = on[0] || null;
+        if (pd.king) {
+          const k = pd.king, rate = pd.contested ? 0.5 : 1;
+          const before = k.cap; k.cap += dt * rate; k.kingT += dt;
+          if (k.human && Math.floor(k.cap * 2) !== Math.floor(before * 2)) beep(700 + k.cap * 50, 0.04, 'sine', 0.03);
+          if (Math.random() < dt * 8) part({ x: k.x + rnd(-10, 10), y: k.y, vy: -40, size: 2.5, life: 0.6, color: '#FFD95B', kind: 'dot', drag: 1, g: -30 });
+        }
       }
-      for (const b of beans) if (b !== pad.king) b.kingT = 0;
+      for (const b of beans) if (!pads.some((pd) => pd.king === b)) b.kingT = 0;
+      // ground pound: touching down from a trampoline launch on (or right by) a pad blasts the others away
+      for (const b of beans) {
+        if (!b.pound || !(b.touch && b.z <= 0.5)) continue;
+        b.pound = 0;
+        const pd = pads.find((q) => hyp(b.x - q.x, b.y - q.y) < padR(q) + 24);
+        if (!pd) continue;
+        ring(b.x, b.y, '#FFB547', 12, 110, 0.45, 7); sparks(b.x, b.y, 16, ['#FFB547', '#fff'], 280, 0.45);
+        if (b.human) { shake(4); popText(b.x, b.y - 46, 'GROUND POUND!', '#FFB547', 18); beep(160, 0.15, 'square', 0.05); }
+        for (const o of beans) {
+          if (o === b || o.z > 30) continue;
+          const d = hyp(o.x - b.x, o.y - b.y); if (d > 95 || d < 0.1) continue;
+          if (shielded(o)) continue;
+          const n = norm(o.x - b.x, o.y - b.y), f = 520 * (1 - d / 130);
+          o.kx += n.x * f; o.ky += n.y * f; o.stun = Math.max(o.stun, 0.45); o.hitCd = 0.4;
+        }
+      }
       // trampolines: launch along your run direction (predictable, so they're a skill shortcut)
       for (const s of tramps) {
         s.cd -= dt; s.dip = Math.max(0, s.dip - dt * 4);
         for (const b of beans) if (s.cd <= 0 && b.z <= 0.5 && b.proneT <= 0 && hyp(b.x - s.x, b.y - s.y) < 30) {
           const sp = hyp(b.vx, b.vy), d = sp > 40 ? { x: b.vx / sp, y: b.vy / sp } : { x: b.fx, y: b.fy };
-          b.vz = 600; b.kx += d.x * 300; b.ky += d.y * 300; s.cd = 0.5; s.dip = 1;
+          b.vz = 600; b.kx += d.x * 300; b.ky += d.y * 300; s.cd = 0.5; s.dip = 1; b.pound = 1;
           ring(s.x, s.y, '#37D8E9', 8, 44, 0.3, 4);
           if (b.human) beep(440, 0.1, 'triangle', 0.05);
         }
@@ -60,9 +85,12 @@ ARENAS.bounce = (() => {
       }
     },
     botInput(b, t) {
-      const goNext = nextPad && padT < 0.6 + 1.0 * b.skill;
-      const tgt = goNext ? nextPad : pad;
-      const r = padR();
+      // pick a pad: near, and better if nobody (or only a weak crowd) is on it
+      let pad = pads[0], best = 1e9;
+      for (const pd of pads) { const tgt0 = pd.next && pd.t < 0.6 + 1.0 * b.skill ? pd.next : pd; const crowd = beans.filter((o) => o !== b && hyp(o.x - pd.x, o.y - pd.y) < padR(pd) + 20).length; const c = hyp(tgt0.x - b.x, tgt0.y - b.y) + crowd * 90 * b.skill; if (c < best) { best = c; pad = pd; } }
+      const goNext = pad.next && pad.t < 0.6 + 1.0 * b.skill;
+      const tgt = goNext ? pad.next : pad;
+      const r = padR(pad);
       const inPad = hyp(b.x - pad.x, b.y - pad.y) < r;
       // not the king? go after the king when close enough to land a shove
       if (b.diveCd <= 0 && pad.king && pad.king !== b && hyp(pad.king.x - b.x, pad.king.y - b.y) < 75 && Math.random() < 0.08 + b.skill * 0.1) {
@@ -74,16 +102,16 @@ ARENAS.bounce = (() => {
           const d = seek(b, o.x, o.y); return { x: d.x, y: d.y, jump: false, dive: true };
         }
       }
-      // skilled bots use a trampoline when it's roughly on the way to a far target
+      // use a trampoline when it's roughly on the way to a far (or crowded) target — a pound clears the pad
       let aim = tgt;
-      const far = hyp(tgt.x - b.x, tgt.y - b.y);
-      if (far > 280 && b.skill > 0.8) for (const s of tramps) { const ds = hyp(s.x - b.x, s.y - b.y), d2 = hyp(tgt.x - s.x, tgt.y - s.y); if (ds < 120 && d2 < far - 60) { aim = s; break; } }
+      const far = hyp(tgt.x - b.x, tgt.y - b.y), crowded = beans.some((o) => o !== b && hyp(o.x - tgt.x, o.y - tgt.y) < 60);
+      if ((far > 280 || (crowded && far > 150)) && b.skill > 0.65) for (const s of tramps) { const ds = hyp(s.x - b.x, s.y - b.y), d2 = hyp(tgt.x - s.x, tgt.y - s.y); if (ds < 130 && d2 < far - 40 && d2 < 230) { aim = s; break; } }
+      if (b.z > 2) aim = tgt; // airborne: steer at the pad
       const dist = hyp(aim.x - b.x, aim.y - b.y); const d = seek(b, aim.x, aim.y);
       const sc = aim === tgt ? clamp(dist / 10, 0.15, 1) : 1;
       return { x: d.x * sc, y: d.y * sc, jump: false, dive: false };
     },
     draw(t) {
-      const r = padR();
       // ── inflatable floor: puffy stripes with a raised rim
       const dd = lift(20);
       ctx.fillStyle = 'rgba(30,5,30,.35)'; roundRect(X1 - 20, Y1 - 6 + dd + 12, X2 - X1 + 46, Y2 - Y1 + 30, 34); ctx.fill();
@@ -126,6 +154,9 @@ ARENAS.bounce = (() => {
         ctx.strokeStyle = '#5fe4ff'; ctx.lineWidth = 6; ctx.beginPath(); ctx.ellipse(s.x, s.y - lift(8), 31, 31, 0, 0, Math.PI * 2); ctx.stroke();
         ctx.strokeStyle = 'rgba(255,255,255,.6)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(s.x, s.y - lift(10), 31, 31, 0, Math.PI * 1.05, Math.PI * 1.85); ctx.stroke();
       }
+      const extras = [];
+      for (const pad of pads) {
+      const r = padR(pad), nextPad = pad.next;
       // ── next pad: dashed ring, path from the current pad
       if (nextPad) {
         const blink = 0.55 + 0.45 * Math.sin(t * 14);
@@ -145,9 +176,8 @@ ARENAS.bounce = (() => {
       for (let k = 0; k < 3; k++) { const ph = (t * 0.9 + k / 3) % 1; ctx.strokeStyle = `rgba(255,255,255,${0.5 * (1 - ph)})`; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(pad.x, pad.y, r * ph, 0, Math.PI * 2); ctx.stroke(); }
       ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(pad.x, pad.y, 8, 0, Math.PI * 2); ctx.stroke();
       glow(hot, 16, () => { ctx.strokeStyle = hot; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(pad.x, pad.y, r, 0, Math.PI * 2); ctx.stroke(); });
-      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(pad.x, pad.y, r + 11, -Math.PI / 2, -Math.PI / 2 + clamp(padT / padLife, 0, 1) * Math.PI * 2); ctx.stroke(); ctx.lineCap = 'butt';
-      // ── beans + a crown on whoever is king
-      const extras = [];
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(pad.x, pad.y, r + 11, -Math.PI / 2, -Math.PI / 2 + clamp(pad.t / padLife, 0, 1) * Math.PI * 2); ctx.stroke(); ctx.lineCap = 'butt';
+      // ── a crown on whoever is king
       if (pad.king) {
         const k = pad.king;
         extras.push({ y: k.y + 0.02, draw: () => billboard(k.x, k.y, k.z + (k.zoff || 0) + 74, () => {
@@ -155,6 +185,7 @@ ARENAS.bounce = (() => {
           glow('#FFD95B', 14, () => drawCrown(0, bob, 1.25));
           if (pad.contested) { ctx.font = '10px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.lineWidth = 3; ctx.strokeStyle = '#3a1a00'; ctx.strokeText('×½', 0, bob - 16); ctx.fillStyle = '#FFB547'; ctx.fillText('×½', 0, bob - 16); }
         }) });
+      }
       }
       // inflatable corner pillars (upright, depth-sorted with the beans)
       for (const [cx, cy, c] of [[X1 - 13, Y1 - 13, '#37D8E9'], [X2 + 13, Y1 - 13, '#FFD95B'], [X1 - 13, Y2 + 13, '#FFD95B'], [X2 + 13, Y2 + 13, '#37D8E9']]) {
