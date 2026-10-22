@@ -20,7 +20,7 @@ for (let i = 0; i < SIZE; i++) {
   const p = await browser.newPage({ viewport: { width: 1100, height: 720 } })
   p.errs = []; p.warns = []
   p.on('pageerror', (e) => p.errs.push(e.message))
-  p.on('console', (m) => { const t = m.text(); if (t.includes('ERR_TUNNEL') || t.includes('fonts.g')) return; if (m.type() === 'error') p.errs.push(t); if (t.includes('desync')) p.warns.push(t) })
+  p.on('console', (m) => { const t = m.text(); if (t.includes('ERR_TUNNEL') || t.includes('fonts.g') || t.includes('MIME type')) return; // wallet.js isn't built in offline sandboxes if (m.type() === 'error') p.errs.push(t); if (t.includes('desync')) p.warns.push(t) })
   await p.goto(base); await p.waitForTimeout(600)
   await p.click('#goOnline'); await p.waitForTimeout(200)
   await p.click(`[data-netsize="${SIZE}"]`); await p.waitForTimeout(100)

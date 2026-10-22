@@ -47,11 +47,11 @@ ARENAS.crossing = (() => {
       for (let k = 0; k < n; k++) {
         if (kind === 'road') {
           const lane = { v: dir * (rnd(105, 165) + p * 75) };
-          lane.cars = movers(lane, 78, 104, 140, 300, 0.2);
+          lane.cars = movers(lane, 78, 104, 140, 300, 0.2 + p * 0.25); // more trucks (unhoppable) further up the course
           add('road', lane);
         } else if (kind === 'river') {
           const lane = { v: dir * (rnd(50, 85) + p * 40) };
-          lane.logs = movers(lane, 110, 190, 95, 170, 0);
+          lane.logs = movers(lane, 105, 180, 110, 185, 0);
           add('river', lane);
         } else add('rail', { dir, next: rnd(1.2, 4.5), warn: 0, x: null, len: 640, sp: 1250 });
         if (kind !== 'road' || Math.random() < 0.6) dir = -dir; // rivers always alternate; roads usually do
@@ -109,12 +109,16 @@ ARENAS.crossing = (() => {
     update(dt, t) {
       T = t;
       for (const lane of lanes) if (lane.type === 'rail') {
-        if (lane.x != null) { lane.x += lane.dir * lane.sp * dt; if (Math.abs(lane.x - 480) > (Rt - L) / 2 + lane.len / 2 + 80) { lane.x = null; lane.next = rnd(3.2, 6); } }
+        if (lane.x != null) { lane.x += lane.dir * lane.sp * dt; if (Math.abs(lane.x - 480) > (Rt - L) / 2 + lane.len / 2 + 80) { lane.x = null; lane.next = rnd(2.4, 4.6); } }
         else if ((lane.next -= dt) <= 0) { lane.x = lane.dir > 0 ? L - lane.len / 2 - 60 : Rt + lane.len / 2 + 60; lane.warn = 0; }
         else lane.warn = lane.next < 1.3 ? 1 : 0;
       }
       for (const s of splashes) s.t -= dt; splashes = splashes.filter((s) => s.t > 0);
       for (const b of beans) {
+        // tired legs: a hop needs a moment on the ground first. Re-jump the instant you land and you only get
+        // a little hop (too low to clear a car), so bunny-hopping the whole course doesn't work.
+        if (b.vz > 380 && b.z < 14 && !b.hopOk) { if ((b.groundT || 0) < 0.28) { b.vz *= 0.55; if (b.human) popText(b.x, b.y - 34, 'TIRED LEGS', '#c9cfe8', 13); } b.hopOk = 1; }
+        if (b.z <= 0.5 && b.vz <= 0) { b.groundT = (b.groundT || 0) + dt; b.hopOk = 0; } else if (b.z > 14) b.groundT = 0;
         const lane = laneAt(b.y), air = b.z > 0.5;
         // trees on grass are solid
         if (lane && lane.type === 'grass') for (const tr of lane.trees) {
