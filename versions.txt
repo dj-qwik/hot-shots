@@ -1,0 +1,40 @@
+hot-shots@ /home/runner/work/hot-shots/hot-shots
+├─┬ @hotshots/game@1.0.0 -> ./game
+│ └── viem@2.57.8
+├─┬ @hotshots/settlement@0.1.0 -> ./services/settlement
+│ └── viem@2.57.8 deduped
+├─┬ @hotshots/shared@0.1.0 -> ./packages/shared
+│ └── viem@2.57.8 deduped
+└─┬ @hotshots/web@0.1.0 -> ./apps/web
+  ├─┬ @privy-io/react-auth@2.25.0
+  │ ├─┬ @base-org/account@1.1.1
+  │ │ ├── viem@2.57.8 deduped
+  │ │ └─┬ zustand@5.0.3
+  │ │   └── react@19.3.1 deduped invalid: "^16.5.1 || ^17.0.0 || ^18.0.0" from node_modules/@privy-io/react-auth/node_modules/lucide-react
+  │ ├─┬ @floating-ui/react@0.26.28
+  │ │ ├─┬ @floating-ui/react-dom@2.1.9
+  │ │ │ ├── react-dom@19.3.1 deduped
+  │ │ │ └── react@19.3.1 deduped invalid: "^16.5.1 || ^17.0.0 || ^18.0.0" from node_modules/@privy-io/react-auth/node_modules/lucide-react
+  │ │ ├── react-dom@19.3.1 deduped
+  │ │ └── react@19.3.1 deduped
+  │ ├─┬ @headlessui/react@2.2.10
+  │ │ ├─┬ @react-aria/focus@3.22.1
+  │ │ │ ├─┬ react-aria@3.53.1
+  │ │ │ │ ├── react-dom@19.3.1 deduped
+  │ │ │ │ ├─┬ react-stately@3.51.0
+  │ │ │ │ │ └── react@19.3.1 deduped invalid: "^16.5.1 || ^17.0.0 || ^18.0.0" from node_modules/@privy-io/react-auth/node_modules/lucide-react
+  │ │ │ │ └── react@19.3.1 deduped invalid: "^16.5.1 || ^17.0.0 || ^18.0.0" from node_modules/@privy-io/react-auth/node_modules/lucide-react
+  │ │ │ ├── react-dom@19.3.1 deduped
+  │ │ │ └── react@19.3.1 deduped invalid: "^16.5.1 || ^17.0.0 || ^18.0.0" from node_modules/@privy-io/react-auth/node_modules/lucide-react
+  │ │ ├─┬ @react-aria/interactions@3.28.1
+  │ │ │ ├─┬ @react-types/shared@3.37.0
+  │ │ │ │ └── react@19.3.1 deduped invalid: "^16.5.1 || ^17.0.0 || ^18.0.0" from node_modules/@privy-io/react-auth/node_modules/lucide-react
+  │ │ │ ├── react-dom@19.3.1 deduped
+  │ │ │ └── react@19.3.1 deduped invalid: "^16.5.1 || ^17.0.0 || ^18.0.0" from node_modules/@privy-io/react-auth/node_modules/lucide-react
+  │ │ ├── react-dom@19.3.1 deduped
+  │ │ ├── react@19.3.1 deduped
+  │ │ └─┬ use-sync-external-store@1.7.0
+  │ │   └── react@19.3.1 deduped invalid: "^16.5.1 || ^17.0.0 || ^18.0.0" from node_modules/@privy-io/react-auth/node_modules/lucide-react
+  │ ├─┬ @heroicons/react@2.2.0
+  │ │ └── react@19.3.1 deduped
+  │ ├─┬ @marsidev/react-turnstile@0.4.1
