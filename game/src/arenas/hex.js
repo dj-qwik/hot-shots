@@ -56,7 +56,7 @@ ARENAS.hex = (() => {
       spot() {
         const c = tiles.filter((tl) => tl.layer === 0 && tl.state === 0);
         if (beans.filter((b) => b.alive && b.layer === 0).length < 2 || !c.length) return null;
-        const tl = c[(Math.random() * c.length) | 0]; return { x: tl.x, y: tl.y };
+        const tl = c[(Math.random() * c.length) | 0]; return { x: tl.x, y: tl.y, layer: 0 }; // top-floor only
       },
       // a bubble catches you as you fall out of the basement: you land on a solid tile instead
       rescue(b) {
